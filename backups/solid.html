@@ -1,0 +1,24 @@
+<html>
+
+<head></head>
+
+<body>
+    <div id="container"></div>
+    <script type="module">
+        import {onCleanup, createSignal} from "https://esm.sh/solid-js@1.8.1";
+        import {render} from "https://esm.sh/solid-js@1.8.1/web";
+        import html from "https://esm.sh/solid-js@1.8.1/html";
+
+        const App = () => {
+            const [count, setCount] = createSignal(0),
+                timer = setInterval(() => setCount(count() + 1), 1000);
+            onCleanup(() => clearInterval(timer));
+            return html`<div>${count}</div>`;
+            // or
+            return h("div", {}, count);
+        };
+        render(App, document.getElementById("container"));
+    </script>
+</body>
+
+</html>
