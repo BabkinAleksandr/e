@@ -38,6 +38,8 @@ declare namespace vanilla {
 
     export interface ComponentDescriptor<C = Component> {
         id: string
+        // dynamic - component can appear and disappear and require marker comment
+        type: 'dynamic' | 'static'
         parentNode: HTMLElement | undefined
         node: HTMLElement | Text | undefined
         component: C
@@ -90,16 +92,13 @@ declare namespace vanilla {
         type: 'move'
         descriptorId: string
         fromIndex: number
-        toIndex: number
+        insertBefore: ComponentDescriptor | null
     }
     export interface InsertElementOperation {
         type: 'insert'
         descriptorId: string
         toIndex: number
-        insertAfter: {
-            type: 'before' | 'after'
-            descriptorId: string
-        } | { type: 'beginning' }
+        insertBefore: ComponentDescriptor | null
     }
     export type UpdateOperation =
         | RemoveElementOperation

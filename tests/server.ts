@@ -56,6 +56,66 @@ export async function startServer() {
                     "Content-Type": "text/javascript"
                 }
             }),
+
+            "/dynamic-children": new Response(await Bun.file("./tests/dynamic-children.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/dynamic-children.js": new Response(await Bun.file("./tests/dynamic-children.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
+
+            "/event-listeners": new Response(await Bun.file("./tests/event-listeners.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/event-listeners.js": new Response(await Bun.file("./tests/event-listeners.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
+
+            "/memory-performance": new Response(await Bun.file("./tests/memory-performance.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/memory-performance.js": new Response(await Bun.file("./tests/memory-performance.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
+
+            "/edge-cases": new Response(await Bun.file("./tests/edge-cases.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/edge-cases.js": new Response(await Bun.file("./tests/edge-cases.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
+
+            "/fuzzy-testing": new Response(await Bun.file("./tests/fuzzy-testing.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/fuzzy-testing.js": new Response(await Bun.file("./tests/fuzzy-testing.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
         }
     })
     console.info('Serving on port 3002...')

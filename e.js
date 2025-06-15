@@ -130,7 +130,14 @@ function createState(obj, parentSymbol, parentKey) {
         /** @returns {boolean} */
         set(target, p, newValue, receiver) {
             if (Reflect.get(target, p, receiver) == newValue) return true
-            const result = Reflect.set(target, p, newValue, receiver)
+
+            const result = Reflect.set(
+                target,
+                p,
+                // bind only new arrays
+                Array.isArray(newValue) ? createState(newValue, s, /** @type {string} */(p)) : newValue,
+                receiver
+            )
             emit('set', s, /** @type {string} */(p))
             return result
         },
@@ -175,7 +182,7 @@ function setOrUpdateAttribute(node, attribute, value, prevValue) {
 
     if (attribute.startsWith('on')) {
         const eventName = /** @type {keyof HTMLElementEventMap} */(attribute.slice(2))
-        if (prevValue && typeof value === 'function') {
+        if (prevValue && typeof prevValue === 'function') {
             node.removeEventListener(eventName, /** @type {EventListener} */(prevValue))
         }
         if (value) {
@@ -263,7 +270,7 @@ const componentUpdateFunction = (descriptor) => {
 
             // TODO: optimize
             console.log('Change from text to component');
-            unbindAndDelete(descriptor)
+            unbindAndDelete(descriptor, { deleteMarker: false })
             renderAndBindConditional(descriptor, rendered)
         }
         console.groupEnd()
@@ -281,7 +288,7 @@ const componentUpdateFunction = (descriptor) => {
     // disappeared
     if (!rendered && descriptor.rendered) {
         console.log('Component removed');
-        unbindAndDelete(descriptor)
+        unbindAndDelete(descriptor, { deleteMarker: false })
         console.groupEnd()
         return
     }
@@ -323,6 +330,7 @@ const typeUpdateFunction = (descriptor) => {
         }
     }
 
+    // TODO: handle and test handlers updates
     const newElem = createElement({ type: newType, attrs })
     const prevElem = descriptor.node
     newElem.replaceChildren(...prevElem.childNodes)
@@ -334,9 +342,13 @@ const typeUpdateFunction = (descriptor) => {
     console.groupEnd()
 }
 
-/** @param {vanilla.ComponentDescriptor} descriptor */
-function unbindAndDelete(descriptor) {
+/** @param {vanilla.ComponentDescriptor} descriptor
+    * @param {Object} [options]
+    * @param {boolean} [options.deleteMarker]
+    * */
+function unbindAndDelete(descriptor, options) {
     console.log('Unbind and delete', descriptor)
+
     descriptor.bindings.forEach((binding) => {
         if (binding.type === 'component') return
 
@@ -348,7 +360,14 @@ function unbindAndDelete(descriptor) {
 
         stateUpdatesMap[binding.key] = propertyBindings.filter((b) => b.descriptor.id !== binding.descriptor.id)
     })
+
     descriptor.bindings = descriptor.bindings.filter((b) => b.type === 'component')
+
+    if (options?.deleteMarker) {
+        const marker = getMarkerNode(descriptor)
+        if (marker) descriptor.parentNode.removeChild(marker)
+    }
+
     descriptor.parentNode.removeChild(descriptor.node)
     descriptor.node = undefined
     descriptor.rendered = undefined
@@ -465,8 +484,11 @@ const childrenUpdateFunction = (descriptor) => {
     if (typeof newChildren === 'string') newChildren = [newChildren]
     if (!newChildren) newChildren = []
 
+    console.log('new children', newChildren)
+    console.log('prev children', descriptor.children.map((c) => c.rendered))
+
     const prevDescriptors = descriptor.children
-    const prevIdToDescriptor = new Map(prevDescriptors.map((d) => [d.id, d]))
+    // const prevIdToDescriptor = new Map(prevDescriptors.map((d) => [d.id, d]))
     const prevKeyToDescriptor = new Map(prevDescriptors.map((d, i) => [getKeyFromAttributes(d.rendered, i), d]))
 
     const newDescriptors = newChildren.map((nc, i) => {
@@ -474,56 +496,72 @@ const childrenUpdateFunction = (descriptor) => {
         if (!prev) return render(nc, /** @type {HTMLElement} */(descriptor.node), { appendImmediately: false })
         return prev
     })
-    const newIdToDescriptor = new Map(newDescriptors.map((d) => [d.id, d]))
+    const newIdToChild = new Map(newDescriptors.map((d) => [d.id, d]))
+    const elementsToRemove = prevDescriptors.filter((d) => !newIdToChild.has(d.id))
+    elementsToRemove.forEach((d) => {
+        unbindAndDelete(d, { deleteMarker: true })
+    })
+
+    const fragment = document.createDocumentFragment()
+    newDescriptors.forEach((d) => {
+        fragment.appendChild(d.node)
+        if (d.type === 'dynamic') fragment.appendChild(new Comment(d.id))
+    });
+
+    // TODO: optimize nodes update. Currently it just reappends elements
+
+    // const newIdToDescriptor = new Map(newDescriptors.map((d) => [d.id, d]))
 
     /** @type {Record<vanilla.UpdateOperation['type'], number>} */
-    const priorities = {
-        remove: 1,
-        move: 2,
-        insert: 3
-    }
-    const DOMOperations = getOptimalDOMOperations(prevDescriptors, newDescriptors)
-    console.log('DOMOperations', DOMOperations)
-    DOMOperations.operations
-        .sort((a, b) => priorities[a.type] - priorities[b.type])
-        .forEach((op) => {
-            if (op.type === 'remove') {
-                const prevDescriptor = prevIdToDescriptor.get(op.descriptorId)
-                assert(Boolean(prevDescriptor), 'Descriptor should exist')
-                unbindAndDelete(prevDescriptor)
-                return
-            }
-            if (op.type === 'move') {
-                const prevDescriptor = prevIdToDescriptor.get(op.descriptorId)
-                assert(Boolean(prevDescriptor), 'Descriptor should exist')
-                assert(descriptor.node.nodeType !== Node.TEXT_NODE, 'Cannot move children on a text node')
-                descriptor.node.insertBefore(prevDescriptor.node, /** @type {HTMLElement} */(descriptor.node).children[op.toIndex + 1])
-                return
-            }
-            if (op.type === 'insert') {
-                const newDescriptor = newIdToDescriptor.get(op.descriptorId)
-                assert(Boolean(newDescriptor), 'New descriptor should exist')
-                if (op.insertAfter.type === 'after') {
-                    const insertAfterDescriptor = prevIdToDescriptor.get(op.insertAfter.descriptorId)
-                    const insertBefore = insertAfterDescriptor ? insertAfterDescriptor.node.nextSibling : undefined
-                    descriptor.node.insertBefore(newDescriptor.node, insertBefore)
-                    return
-                }
+    // const priorities = {
+    //     remove: 1,
+    //     move: 2,
+    //     insert: 3
+    // }
+    // const DOMOperations = getOptimalDOMOperations(prevDescriptors, newDescriptors)
+    // console.log('DOMOperations', DOMOperations)
+    // DOMOperations.operations
+    //     .sort((a, b) => priorities[a.type] - priorities[b.type])
+    //     .forEach((op) => {
+    //         if (op.type === 'remove') {
+    //             const prevDescriptor = prevIdToDescriptor.get(op.descriptorId)
+    //             assert(Boolean(prevDescriptor), 'Descriptor should exist')
+    //             unbindAndDelete(prevDescriptor)
+    //             return
+    //         }
+    //         if (op.type === 'move') {
+    //             const prevDescriptor = prevIdToDescriptor.get(op.descriptorId)
+    //             assert(Boolean(prevDescriptor), 'Descriptor should exist')
+    //             assert(descriptor.node.nodeType !== Node.TEXT_NODE, 'Cannot move children on a text node')
+    //             descriptor.node.insertBefore(prevDescriptor.node, /** @type {HTMLElement} */(descriptor.node).children[op.toIndex + 1])
+    //             return
+    //         }
+    //         if (op.type === 'insert') {
+    //             const newDescriptor = newIdToDescriptor.get(op.descriptorId)
+    //             assert(Boolean(newDescriptor), 'New descriptor should exist')
+    //             if (op.insertAfter.type === 'after') {
+    //                 const insertAfterDescriptor = prevIdToDescriptor.get(op.insertAfter.descriptorId)
+    //                 const insertBefore = insertAfterDescriptor ? insertAfterDescriptor.node.nextSibling : undefined
+    //                 descriptor.node.insertBefore(newDescriptor.node, insertBefore)
+    //                 return
+    //             }
+    //
+    //             if (op.insertAfter.type === 'before') {
+    //                 const insertBeforeDescriptor = prevIdToDescriptor.get(op.insertAfter.descriptorId)
+    //                 descriptor.node.insertBefore(newDescriptor.node, insertBeforeDescriptor ? insertBeforeDescriptor.node : undefined)
+    //                 return
+    //             }
+    //
+    //             if (op.insertAfter.type === 'beginning') {
+    //                 descriptor.node.insertBefore(newDescriptor.node, descriptor.node.firstChild)
+    //                 return
+    //             }
+    //         }
+    //     })
 
-                if (op.insertAfter.type === 'before') {
-                    const insertBeforeDescriptor = prevIdToDescriptor.get(op.insertAfter.descriptorId)
-                    descriptor.node.insertBefore(newDescriptor.node, insertBeforeDescriptor ? insertBeforeDescriptor.node : undefined)
-                    return
-                }
 
-                if (op.insertAfter.type === 'beginning') {
-                    descriptor.node.insertBefore(newDescriptor.node, descriptor.node.firstChild)
-                    return
-                }
-            }
-        })
-
-
+    /** @type {HTMLElement} */(descriptor.node).innerHTML = null;
+    descriptor.node.appendChild(fragment)
     descriptor.children = newDescriptors;
 
     console.log('Children updated', prevDescriptors, newChildren)
@@ -540,16 +578,13 @@ function getKeyFromAttributes(comp, index) {
 
     if (!component) return index
     if (typeof component === 'string') return component
-    // FIXME: check if it's still necessary
-    // if (typeof component === 'object') {
-    //     if (component.type === 'textnode') {
-    //         const children = typeof component.children === 'function'
-    //             ? component.children()
-    //             : component.children
-    //
-    //         return /** @type {string} */(children)
-    //     }
-    // }
+    if (typeof component === 'object' && component.type === 'textnode') {
+        const children = typeof component.children === 'function'
+            ? component.children()
+            : component.children
+
+        return /** @type {string} */(children)
+    }
 
     let attrs;
     attrs = typeof component === 'object' ? component.attrs : {}
@@ -624,17 +659,20 @@ function renderAndBindConditional(descriptor, r) {
         }
     }
 
-    /** @type {Comment | void} */
-    let marker = undefined
-    for (const node of descriptor.parentNode.childNodes) {
-        if (node.nodeType === Node.COMMENT_NODE && /** @type {Comment} */(node).data === descriptor.id) {
-            marker = /** @type {Comment} */ (node)
-            break
-        }
-    }
+    const marker = getMarkerNode(descriptor)
     assert(!!marker, 'Cannot insert dynamic component without marker')
     descriptor.parentNode.insertBefore(descriptor.node, marker)
     return descriptor
+}
+
+/** @param {vanilla.ComponentDescriptor} childDescriptor
+    * @returns {Comment | void} commentNode */
+function getMarkerNode(childDescriptor) {
+    for (const node of childDescriptor.parentNode.childNodes) {
+        if (node.nodeType === Node.COMMENT_NODE && /** @type {Comment} */(node).data === childDescriptor.id) {
+            return /** @type {Comment} */ (node)
+        }
+    }
 }
 
 /** @template T
@@ -648,6 +686,9 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
     window.__APP_STATE.lastSymbols.length = 0
     /** @type {T} */
     const result = update.call(update)
+
+    /// FIXME: This approach creates a lot of unnecessary bindings, when 'children' is statically rendered
+    // which means on every 'EVAL' call, every child property call is also bond to 'children' update
 
     window.__APP_STATE.lastSymbols.forEach(({ key, symbol }) => {
         // TODO: optimize deduplication
@@ -756,6 +797,7 @@ function render(component, parentNode, options) {
     /** @type {vanilla.ComponentDescriptor} */
     const descriptor = {
         id: generateRandomId(),
+        type: 'static',
         parentNode,
         node: undefined,
         component,
@@ -764,6 +806,10 @@ function render(component, parentNode, options) {
         bindings: []
     }
 
+    const appendImmediately = options && options.appendImmediately !== undefined
+        ? options.appendImmediately
+        : true
+
     console.group('RENDER')
     console.log('rendering', component, 'in', parentNode)
 
@@ -771,9 +817,12 @@ function render(component, parentNode, options) {
 
     if (typeof component === 'function') {
         console.log('its a function btw')
-        parentNode.appendChild(new Comment(descriptor.id))
 
+        descriptor.type = 'dynamic'
         const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
+
+        // regardless of function result
+        if (appendImmediately) parentNode.appendChild(new Comment(descriptor.id))
 
         if (!isComponent(result)) {
             console.log('its not a component')
@@ -867,9 +916,6 @@ function render(component, parentNode, options) {
         }
     }
 
-    const appendImmediately = options && options.appendImmediately !== undefined
-        ? options.appendImmediately
-        : true
 
     if (appendImmediately) parentNode.appendChild(descriptor.node)
 
@@ -926,9 +972,9 @@ function assert(condition, ...messages) {
 }
 
 function generateRandomId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
-    const idLength = 10;
+    const idLength = 16;
 
     for (let i = 0; i < idLength; i++) {
         const randomIndex = Math.floor(Math.random() * chars.length);
@@ -1090,171 +1136,174 @@ class ArrayWithNotify {
 
 /** @param {vanilla.ComponentDescriptor[]} prevDescriptors
   * @param {vanilla.ComponentDescriptor[]} newDescriptors */
-function getOptimalDOMOperations(prevDescriptors, newDescriptors) {
-    // Step 1: Categorize elements
-    const oldSet = new Set(prevDescriptors.map((d) => d.id))
-    const newSet = new Set(newDescriptors.map((d) => d.id))
-
-    const toRemove = prevDescriptors.filter((d) => !newSet.has(d.id));
-    const toAdd = newDescriptors.filter((d) => !oldSet.has(d.id));
-    const common = prevDescriptors.filter((d) => newSet.has(d.id));
-
-    // Step 2: Create position mappings for common elements
-    /** @type {Map<string, number>} */
-    const newPositions = new Map();
-    let commonIndex = 0;
-    newDescriptors.forEach((desc) => {
-        if (oldSet.has(desc.id)) {
-            newPositions.set(desc.id, commonIndex++);
-        }
-    });
-
-    // Step 3: Find optimal rearrangement for common elements
-    const targetPositions = common.map((d) => newPositions.get(d.id));
-    const lisIndices = findLISIndices(targetPositions);
-    const stableElements = new Set(lisIndices.map(i => common[i].id));
-
-    // Step 4: Generate all operations
-    /** @type {vanilla.UpdateOperation[]} */
-    const operations = [];
-
-    // Removals (do these first)
-    toRemove.forEach((d) => {
-        operations.push({
-            type: 'remove',
-            descriptorId: d.id,
-            fromIndex: prevDescriptors.findIndex((pd) => pd.id === d.id)
-        });
-    });
-
-    // Moves (for common elements not in LIS)
-    common.forEach((d) => {
-        if (!stableElements.has(d.id)) {
-            operations.push({
-                type: 'move',
-                descriptorId: d.id,
-                fromIndex: prevDescriptors.findIndex((pd) => pd.id === d.id),
-                toIndex: findFinalPosition(d, newDescriptors, toAdd)
-            });
-        }
-    });
-
-    // Insertions (do these last)
-    toAdd.forEach((d) => {
-        operations.push({
-            type: 'insert',
-            descriptorId: d.id,
-            toIndex: newDescriptors.findIndex((nd) => nd.id === d.id),
-            insertAfter: findInsertionReference(d, newDescriptors, oldSet)
-        });
-    });
-
-    return {
-        operations,
-        stats: {
-            removals: toRemove.length,
-            moves: common.length - stableElements.size,
-            insertions: toAdd.length,
-            stable: stableElements.size,
-            total: operations.length
-        }
-    };
-}
+// function getOptimalDOMOperations(prevDescriptors, newDescriptors) {
+//     // Step 1: Categorize elements
+//     const oldSet = new Set(prevDescriptors.map((d) => d.id))
+//     const newSet = new Set(newDescriptors.map((d) => d.id))
+//
+//     const toRemove = prevDescriptors.filter((d) => !newSet.has(d.id));
+//     const toAdd = newDescriptors.filter((d) => !oldSet.has(d.id));
+//     const common = prevDescriptors.filter((d) => newSet.has(d.id));
+//
+//     // Step 2: Create position mappings for common elements
+//     /** @type {Map<string, number>} */
+//     const newPositions = new Map();
+//     newDescriptors.forEach((desc, index) => {
+//         if (oldSet.has(desc.id)) {
+//             newPositions.set(desc.id, index);
+//         }
+//     });
+//
+//     // Step 3: Find optimal rearrangement for common elements
+//     const targetPositions = common.map((d) => newPositions.get(d.id));
+//     const lisIndices = findLISIndices(targetPositions);
+//     const stableElements = new Set(lisIndices.map(i => common[i].id));
+//
+//     // Step 4: Generate all operations
+//     /** @type {vanilla.UpdateOperation[]} */
+//     const operations = [];
+//
+//     // Removals (do these first)
+//     toRemove.forEach((d) => {
+//         operations.push({
+//             type: 'remove',
+//             descriptorId: d.id,
+//             fromIndex: prevDescriptors.findIndex((pd) => pd.id === d.id)
+//         });
+//     });
+//
+//     // Moves (for common elements not in LIS)
+//     common.forEach((d) => {
+//         if (!stableElements.has(d.id)) {
+//             const targetPos = newPositions.get(d.id)
+//             operations.push({
+//                 type: 'move',
+//                 descriptorId: d.id,
+//                 fromIndex: prevDescriptors.findIndex((pd) => pd.id === d.id),
+//                 insertBefore: findInsertionReference(d, newDescriptors, oldSet, targetPos)
+//             });
+//         }
+//     });
+//
+//     // Insertions (do these last)
+//     toAdd.forEach((d) => {
+//         const targetPos = newDescriptors.findIndex((nd) => nd.id === d.id);
+//         operations.push({
+//             type: 'insert',
+//             descriptorId: d.id,
+//             toIndex: newDescriptors.findIndex((nd) => nd.id === d.id),
+//             insertBefore: findInsertionReference(d, newDescriptors, oldSet, targetPos)
+//         });
+//     });
+//
+//     return {
+//         operations,
+//         stats: {
+//             removals: toRemove.length,
+//             moves: common.length - stableElements.size,
+//             insertions: toAdd.length,
+//             stable: stableElements.size,
+//             total: operations.length
+//         }
+//     };
+// }
 
 /** @param {vanilla.ComponentDescriptor} descriptor
     * @param {vanilla.ComponentDescriptor[]} newDescriptors
     * @param {vanilla.ComponentDescriptor[]} addedDescriptors */
-function findFinalPosition(descriptor, newDescriptors, addedDescriptors) {
-    // Find position in final order, accounting for insertions
-    let position = newDescriptors.findIndex((d) => d.id === descriptor.id);
-    let adjustment = 0;
-
-    // Count how many new elements come before this one
-    for (let i = 0; i < position; i++) {
-        const newD = newDescriptors[i]
-        if (addedDescriptors.some((ad) => ad.id === newD.id)) {
-            adjustment++;
-        }
-    }
-
-    return position - adjustment;
-}
+// function findFinalPosition(descriptor, newDescriptors, addedDescriptors) {
+//     // Find position in final order, accounting for insertions
+//     let position = newDescriptors.findIndex((d) => d.id === descriptor.id);
+//     let adjustment = 0;
+//
+//     // Count how many new elements come before this one
+//     for (let i = 0; i < position; i++) {
+//         const newD = newDescriptors[i]
+//         if (addedDescriptors.some((ad) => ad.id === newD.id)) {
+//             adjustment++;
+//         }
+//     }
+//
+//     return position - adjustment;
+// }
 
 /** @param {vanilla.ComponentDescriptor} descriptor
     * @param {vanilla.ComponentDescriptor[]} newDescriptors
     * @param {Set<string>} oldDescriptors
-    * @returns {vanilla.InsertElementOperation['insertAfter']}*/
-function findInsertionReference(descriptor, newDescriptors, oldDescriptors) {
-    const insertIndex = newDescriptors.findIndex((nd) => nd.id === descriptor.id);
+    * @param {number} targetPos
+    * @returns {vanilla.ComponentDescriptor}*/
+// function findInsertionReference(descriptor, newDescriptors, oldDescriptors, targetPos) {
+//     // const insertIndex = newDescriptors.findIndex((nd) => nd.id === descriptor.id);
+//
+//     // Find the nearest existing element that comes before this insertion
+//     for (let i = targetPos + 1; i < newDescriptors.length; i++) {
+//         if (oldDescriptors.has(newDescriptors[i].id)) {
+//             return newDescriptors[i]
+//             // return {
+//             //     type: 'after',
+//             //     descriptorId: newDescriptors[i].id
+//             // };
+//         }
+//     }
+//     return null
+//
+//     // Find the nearest existing element that comes after this insertion
+//     // for (let i = insertIndex + 1; i < newDescriptors.length; i++) {
+//     //     if (oldDescriptors.has(newDescriptors[i].id)) {
+//     //         return {
+//     //             type: 'before',
+//     //             descriptorId: newDescriptors[i].id
+//     //         };
+//     //     }
+//     // }
+//
+//     // If no reference found, insert at beginning
+//     // return { type: 'beginning' };
+// }
 
-    // Find the nearest existing element that comes before this insertion
-    for (let i = insertIndex - 1; i >= 0; i--) {
-        if (oldDescriptors.has(newDescriptors[i].id)) {
-            return {
-                type: 'after',
-                descriptorId: newDescriptors[i].id
-            };
-        }
-    }
-
-    // Find the nearest existing element that comes after this insertion
-    for (let i = insertIndex + 1; i < newDescriptors.length; i++) {
-        if (oldDescriptors.has(newDescriptors[i].id)) {
-            return {
-                type: 'before',
-                descriptorId: newDescriptors[i].id
-            };
-        }
-    }
-
-    // If no reference found, insert at beginning
-    return { type: 'beginning' };
-}
-
-// Reuse the optimized LIS function from before
 /** @param {Array<number>} arr
     * @returns {Array<number>}*/
-function findLISIndices(arr) {
-    const n = arr.length;
-    if (n === 0) return [];
-
-    const tails = [];
-    const parent = new Array(n).fill(-1);
-
-    for (let i = 0; i < n; i++) {
-        let left = 0;
-        let right = tails.length;
-
-        while (left < right) {
-            const mid = Math.floor((left + right) / 2);
-            if (arr[tails[mid]] < arr[i]) {
-                left = mid + 1;
-            } else {
-                right = mid;
-            }
-        }
-
-        if (left === tails.length) {
-            tails.push(i);
-        } else {
-            tails[left] = i;
-        }
-
-        if (left > 0) {
-            parent[i] = tails[left - 1];
-        }
-    }
-
-    const result = [];
-    let current = tails[tails.length - 1];
-
-    while (current !== -1) {
-        result.unshift(current);
-        current = parent[current];
-    }
-
-    return result;
-}
+// function findLISIndices(arr) {
+//     const n = arr.length;
+//     if (n === 0) return [];
+//
+//     const tails = [];
+//     const parent = new Array(n).fill(-1);
+//
+//     for (let i = 0; i < n; i++) {
+//         let left = 0;
+//         let right = tails.length;
+//
+//         while (left < right) {
+//             const mid = Math.floor((left + right) / 2);
+//             if (arr[tails[mid]] < arr[i]) {
+//                 left = mid + 1;
+//             } else {
+//                 right = mid;
+//             }
+//         }
+//
+//         if (left === tails.length) {
+//             tails.push(i);
+//         } else {
+//             tails[left] = i;
+//         }
+//
+//         if (left > 0) {
+//             parent[i] = tails[left - 1];
+//         }
+//     }
+//
+//     const result = [];
+//     let current = tails[tails.length - 1];
+//
+//     while (current !== -1) {
+//         result.unshift(current);
+//         current = parent[current];
+//     }
+//
+//     return result;
+// }
 
 // WARN: take another look on this
 if (!document) throw new Error('No document')

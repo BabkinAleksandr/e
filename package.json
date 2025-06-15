@@ -1,6 +1,9 @@
 {
   "name": "e",
   "private": true,
+  "scripts": {
+      "server": "START_SERVER=true bun run ./tests/server.js"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
