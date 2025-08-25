@@ -408,6 +408,31 @@ describe('Dynamic Component Behavior Tests', () => {
         });
     });
 
+    describe('Nested conditions', () => {
+        test('Binds several state conditions', async () => {
+            await page.waitForSelector('#nested-condition-1-off-btn')
+            await page.click('#nested-condition-1-off-btn')
+            await page.click('#nested-condition-2-off-btn')
+            await page.waitForSelector('div#nested-condition-1-component', { hidden: true });
+            await page.waitForSelector('div#nested-condition-2-component', { hidden: true });
+            await page.waitForSelector('#nested-conditions-component', { hidden: true })
+
+            await delay(100)
+
+            await page.click('#nested-condition-1-on-btn')
+            await page.waitForSelector('div#nested-condition-1-component')
+
+            await page.click('#nested-condition-2-on-btn')
+            await page.waitForSelector('div#nested-condition-1-component')
+
+            await page.waitForSelector('#nested-conditions-component')
+            expect(await page.$eval('#nested-conditions-component', (el) => el.textContent))
+                .toBe('Nested conditions component')
+        })
+    })
+
+
+
     describe('Error Handling and Edge Cases', () => {
         test('component function returns null/undefined', async () => {
             // Show component that returns null
@@ -478,3 +503,10 @@ describe('Dynamic Component Behavior Tests', () => {
         });
     });
 });
+
+
+function delay(time: number): Promise<void> {
+    return new Promise(function(resolve) {
+        setTimeout(resolve, time)
+    });
+}

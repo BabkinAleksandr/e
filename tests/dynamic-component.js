@@ -24,7 +24,9 @@ document.addEventListener('e:init', () => {
         showStable: false,
         showDeep1: false,
         showDeep2: false,
-        showDeep3: false
+        showDeep3: false,
+        nestedCondition1: false,
+        nestedCondition2: false
     });
 
     // Helper components
@@ -170,6 +172,17 @@ document.addEventListener('e:init', () => {
         return e('div', { id: 'deep-level-3', class: 'component' },
             'Deep level 3');
     };
+
+    const NestedConditions = () => {
+        if (!state.nestedCondition1) return null
+        if (!state.nestedCondition2) return null
+
+        return e(
+            'div',
+            { id: 'nested-conditions-component', class: 'component' },
+            'Nested conditions component'
+        )
+    }
 
     const App = () => e('div', [
         e('div', { class: 'test-section' }, [
@@ -529,6 +542,33 @@ document.addEventListener('e:init', () => {
             ]),
             e('div', { id: 'deep-nesting-container' }, [
                 DeepLevel1
+            ])
+        ]),
+
+        e('div', { class: 'test-section' }, [
+            e('h2', 'Nested conditions'),
+            e('div', { class: 'controls' }, [
+                e('button', {
+                    id: 'nested-condition-1-on-btn',
+                    onclick: () => state.nestedCondition1 = true
+                }, 'Nested contidion 1: ON'),
+                e('button', {
+                    id: 'nested-condition-1-off-btn',
+                    onclick: () => state.nestedCondition1 = false
+                }, 'Nested contidion 1: OFF'),
+                e('button', {
+                    id: 'nested-condition-2-on-btn',
+                    onclick: () => state.nestedCondition2 = true
+                }, 'Nested contidion 2: ON'),
+                e('button', {
+                    id: 'nested-condition-2-off-btn',
+                    onclick: () => state.nestedCondition2 = false
+                }, 'Nested contidion 2: OFF'),
+            ]),
+            e('div', { id: 'deep-nesting-container' }, [
+                () => state.nestedCondition1 ? e('div', { id: 'nested-condition-1-component' }, 'Nested condition 1') : null,
+                () => state.nestedCondition2 ? e('div', { id: 'nested-condition-2-component' }, 'Nested condition 2') : null,
+                NestedConditions
             ])
         ])
     ]);
