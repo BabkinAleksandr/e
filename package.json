@@ -2,7 +2,7 @@
   "name": "e",
   "private": true,
   "scripts": {
-      "server": "START_SERVER=true bun run ./tests/server.js"
+      "server": "START_SERVER=true bun run ./tests/server.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

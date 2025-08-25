@@ -116,6 +116,18 @@ export async function startServer() {
                     "Content-Type": "text/javascript"
                 }
             }),
+
+            "/error-boundary": new Response(await Bun.file("./tests/error-boundary.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/error-boundary.js": new Response(await Bun.file("./tests/error-boundary.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
         }
     })
     console.info('Serving on port 3002...')

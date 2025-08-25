@@ -23,10 +23,13 @@ declare namespace vanilla {
     }
     export type Component = string | DefinedComponent | (() => DefinedComponent) | (() => Falsy)
 
+    export type ErrorBoundaryComponent = ((e: Error) => string | DefinedComponent | StaticComponent | Falsy)
+
     export interface StaticComponent {
         type: string
         attrs: Attributes
         children: Array<Component>
+        errorBoundaryRendered?: boolean
     }
 
     interface DynamicComponentBody {
@@ -36,14 +39,18 @@ declare namespace vanilla {
     }
     export type DynamicComponent = DynamicComponentBody | (() => DynamicComponentBody)
 
-    export interface ComponentDescriptor<C = Component> {
+    export type ParentDescriptor = ComponentDescriptor<DefinedComponent | (() => DefinedComponent) | (() => Falsy), StaticComponent, HTMLElement>
+
+    export interface ComponentDescriptor<C = Component, R = TextComponent | StaticComponent | void, N = HTMLElement | Text | undefined> {
         id: string
         // dynamic - component can appear and disappear and require marker comment
         type: 'dynamic' | 'static'
-        parentNode: HTMLElement | undefined
-        node: HTMLElement | Text | undefined
+        parent: ParentDescriptor
+        node: N
         component: C
-        rendered: TextComponent | StaticComponent | void
+        errorBoundaryComponent?: Component | ((e: Error) => string | DefinedComponent | StaticComponent | Falsy)
+        renderErrorBoundary?: (e: Error) => void
+        rendered: R
         children: ComponentDescriptor[]
         bindings: Binding[]
     }

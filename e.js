@@ -1,6 +1,6 @@
 /// <reference path="./e.d.ts" />
 /// <reference path="./global.d.ts" />
-//
+
 // TODO: remove all consoles
 // TODO: remove assertions in prod release
 
@@ -17,12 +17,21 @@ window.__APP_STATE = {
     }
 }
 
+const ROOT_DESCRIPTOR_ID = 'e:root'
+const ERR_BOUNDARY_KEY = '__e_error_boundary'
+const E_COMPONENT_KEY = '__is_e_component'
+
+// console.group = () => void 0
+// console.groupEnd = () => void 0
+// console.log = () => void 0
+// console.info = () => void 0
+
 /** @returns {vanilla.Component} */
 function e() {
     /** @type {vanilla.DefinedComponent} */
     const component = {}
 
-    Object.defineProperty(component, '__is_e_component', {
+    Object.defineProperty(component, E_COMPONENT_KEY, {
         configurable: false,
         enumerable: false,
         value: true,
@@ -39,7 +48,7 @@ function e() {
 
     if (arguments.length === 2) {
         const secondArgumentsIsObject = typeof arguments[1] === 'object' && !Array.isArray(arguments[1])
-        const isComponent = typeof arguments[1] === 'object' && !!arguments[1]['__is_e_component']
+        const isComponent = typeof arguments[1] === 'object' && !!arguments[1][E_COMPONENT_KEY]
         if (isComponent) {
             component.attrs = {}
             component.children = [arguments[1]]
@@ -61,6 +70,22 @@ function e() {
     if (!Array.isArray(component.children) && typeof component.children !== 'function') {
         component.children = [component.children]
     }
+
+    return component
+}
+
+/** Error boundary 
+    * @param {vanilla.Component} component
+    * @param {vanilla.Component} recoverComponent */
+function errb(component, recoverComponent) {
+    if (typeof component !== 'function') return
+
+    Object.defineProperty(component, ERR_BOUNDARY_KEY, {
+        value: recoverComponent,
+        enumerable: false,
+        writable: false,
+        configurable: false
+    })
 
     return component
 }
@@ -92,7 +117,7 @@ function emit(type, symbol, key) {
                 /** @type {vanilla.Binding[] | void} */
                 const propertyBindings = objBindings[key]
                 if (propertyBindings) {
-                    console.log('prop bindings', objBindings)
+                    console.log('prop bindings', propertyBindings)
                     propertyBindings.forEach((binding) => {
                         binding.updateFunction.call(binding.updateFunction)
                     })
@@ -228,16 +253,47 @@ function createElement(component) {
     return node;
 }
 
+/** @param {(d: vanilla.ComponentDescriptor, ...args: any[]) => void} fn
+    * @returns {(d: vanilla.ComponentDescriptor, ...args: any[]) => void} */
+function withErrorBoundary(fn) {
+    return function(descriptor, ...args) {
+        try {
+            fn(descriptor, ...args)
+        } catch (err) {
+            // highly likely group won't be closed otherwise
+            console.groupEnd()
+            console.error("error caught", err)
+            console.log("Error boundary?", descriptor.renderErrorBoundary)
+            if (descriptor.renderErrorBoundary) {
+                descriptor.renderErrorBoundary(err)
+            } else {
+                throw err
+            }
+        }
+    }
+}
 
 /** @param {vanilla.ComponentDescriptor} descriptor */
-const componentUpdateFunction = (descriptor) => {
+const componentUpdateFunction = withErrorBoundary((descriptor) => {
     console.group('[UPDATE] component')
     console.info('descriptor', descriptor)
     assert(typeof descriptor.component === 'function', 'Cannot perform update on non-function-component')
 
-    /** @type {vanilla.DefinedComponent | string | void} */
+    if (descriptor.rendered && descriptor.rendered.errorBoundaryRendered) {
+        recoverComponent(descriptor)
+        return
+    }
+
+    let cur = descriptor.parent
+    while (cur.id !== ROOT_DESCRIPTOR_ID) {
+        // return early if parent element has thrown
+        if (cur.rendered && cur.rendered.errorBoundaryRendered) return
+        cur = cur.parent
+    }
+
+    /** @type {vanilla.DefinedComponent | vanilla.Falsy} */
     const rendered = typeof descriptor.component === 'function'
-        ? descriptor.component.call(descriptor.component)
+        ? evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(descriptor.component), 'component')
         : descriptor.component
 
     // component remains, check if it changed
@@ -254,7 +310,7 @@ const componentUpdateFunction = (descriptor) => {
                 // render text instead of a component
                 // unbindAndDelete(descriptor)
                 const textNode = new Text(rendered)
-                descriptor.parentNode.replaceChild(textNode, descriptor.node)
+                descriptor.parent.node.replaceChild(textNode, descriptor.node)
                 descriptor.node = textNode
                 /** @type {vanilla.TextComponent} */
                 descriptor.rendered = {
@@ -264,12 +320,15 @@ const componentUpdateFunction = (descriptor) => {
                 }
             }
         } else {
-            // TODO:
-            // it was text, but now it's not
-            // treat it as completely new element
-
+            if (typeof descriptor.rendered === 'string') {
+                // it was a component, now it's a text
+                // TODO: optimize
+                console.log('Change from component to text');
+            } else {
+                // it was text, but now it's not
+                console.log('Change from text to component');
+            }
             // TODO: optimize
-            console.log('Change from text to component');
             unbindAndDelete(descriptor, { deleteMarker: false })
             renderAndBindConditional(descriptor, rendered)
         }
@@ -279,7 +338,7 @@ const componentUpdateFunction = (descriptor) => {
 
     // appeared
     if (rendered && !descriptor.rendered) {
-        console.log('Component appeared');
+        console.log('Component appeared', 'rendered:', { ...descriptor.rendered });
         renderAndBindConditional(descriptor, rendered)
         console.groupEnd()
         return
@@ -295,12 +354,17 @@ const componentUpdateFunction = (descriptor) => {
 
     console.groupEnd()
     // here component remains non-rendered
-}
+})
 
 /** @param {vanilla.ComponentDescriptor} descriptor */
-const typeUpdateFunction = (descriptor) => {
+const typeUpdateFunction = withErrorBoundary((descriptor) => {
     console.group('[UPDATE] Type')
     assert(descriptor.rendered, "Cannot update type on falsy element")
+
+    if (descriptor.rendered && descriptor.rendered.errorBoundaryRendered) {
+        recoverComponent(descriptor)
+        return
+    }
 
     const component = typeof descriptor.component === 'function'
         ? descriptor.component()
@@ -335,22 +399,23 @@ const typeUpdateFunction = (descriptor) => {
     const prevElem = descriptor.node
     newElem.replaceChildren(...prevElem.childNodes)
     descriptor.rendered.type = newType
-    descriptor.parentNode.replaceChild(newElem, prevElem)
+    descriptor.parent.node.replaceChild(newElem, prevElem)
     descriptor.node = newElem
-    descriptor.children.forEach((d) => d.parentNode = newElem)
+    descriptor.children.forEach((d) => d.parent.node = newElem)
     console.log('Type updated')
     console.groupEnd()
-}
+})
 
 /** @param {vanilla.ComponentDescriptor} descriptor
     * @param {Object} [options]
     * @param {boolean} [options.deleteMarker]
+    * @param {boolean} [options.deleteComponentBinding]
     * */
 function unbindAndDelete(descriptor, options) {
-    console.log('Unbind and delete', descriptor)
+    console.log('Unbind and delete', descriptor, descriptor.parent)
 
     descriptor.bindings.forEach((binding) => {
-        if (binding.type === 'component') return
+        if (!options.deleteComponentBinding && binding.type === 'component') return
 
         const stateUpdatesMap = window.__APP_STATE.updates[binding.type].get(binding.symbol)
         if (!stateUpdatesMap) return
@@ -361,21 +426,36 @@ function unbindAndDelete(descriptor, options) {
         stateUpdatesMap[binding.key] = propertyBindings.filter((b) => b.descriptor.id !== binding.descriptor.id)
     })
 
-    descriptor.bindings = descriptor.bindings.filter((b) => b.type === 'component')
+    descriptor.bindings = descriptor.bindings.filter((b) => !options.deleteComponentBinding && b.type === 'component')
 
     if (options?.deleteMarker) {
         const marker = getMarkerNode(descriptor)
-        if (marker) descriptor.parentNode.removeChild(marker)
+        if (marker) descriptor.parent.node.removeChild(marker)
     }
 
-    descriptor.parentNode.removeChild(descriptor.node)
+    // TODO: optimize
+    for (const child of descriptor.children) {
+        unbindAndDelete(child, { deleteMarker: true, deleteComponentBinding: true })
+    }
+
+    descriptor.children = []
+    if (descriptor.parent.node.contains(descriptor.node)) {
+        descriptor.parent.node.removeChild(descriptor.node)
+    }
     descriptor.node = undefined
     descriptor.rendered = undefined
 }
 
+
 /** @param {vanilla.ComponentDescriptor} descriptor */
-const attributesUpdateFunction = (descriptor) => {
+const attributesUpdateFunction = withErrorBoundary((descriptor) => {
     console.log('[UPDATE] Attributes', descriptor)
+
+    if (descriptor.rendered && descriptor.rendered.errorBoundaryRendered) {
+        recoverComponent(descriptor)
+        return
+    }
+
     const component = typeof descriptor.component === 'function'
         ? descriptor.component()
         : descriptor.component
@@ -422,15 +502,20 @@ const attributesUpdateFunction = (descriptor) => {
         }
     }
     console.groupEnd()
-}
+})
 
 /** @param {vanilla.ComponentDescriptor} descriptor
     * @param {string} attribute */
-const attributeUpdateFunction = (descriptor, attribute) => {
+const attributeUpdateFunction = withErrorBoundary((descriptor, attribute) => {
     console.group('[UPDATE] Attribute', attribute, descriptor)
     // assert(typeof descriptor.component !== 'function', 'Cannot update attributes on dynamic component')
     assert(!!descriptor.rendered, 'Cannot perform attribute update on non-existent component')
     assert(descriptor.rendered.type !== 'textnode', 'Cannot update attributes on a text component')
+
+    if (descriptor.rendered && descriptor.rendered.errorBoundaryRendered) {
+        recoverComponent(descriptor)
+        return
+    }
 
     const component = typeof descriptor.component === 'function'
         ? descriptor.component()
@@ -456,11 +541,17 @@ const attributeUpdateFunction = (descriptor, attribute) => {
     descriptor.rendered.attrs[attribute] = attributeValue
     console.log('Attribute updated')
     console.groupEnd()
-}
+})
 
 /** @param {vanilla.ComponentDescriptor} descriptor */
-const childrenUpdateFunction = (descriptor) => {
+const childrenUpdateFunction = withErrorBoundary((descriptor) => {
     console.group('[UPDATE] Children', descriptor)
+
+    if (descriptor.rendered && descriptor.rendered.errorBoundaryRendered) {
+        recoverComponent(descriptor)
+        return
+    }
+
     const component = typeof descriptor.component === 'function'
         ? descriptor.component()
         : descriptor.component
@@ -493,7 +584,7 @@ const childrenUpdateFunction = (descriptor) => {
 
     const newDescriptors = newChildren.map((nc, i) => {
         const prev = prevKeyToDescriptor.get(getKeyFromAttributes(nc, i))
-        if (!prev) return render(nc, /** @type {HTMLElement} */(descriptor.node), { appendImmediately: false })
+        if (!prev) return render(nc, descriptor, { appendImmediately: false })
         return prev
     })
     const newIdToChild = new Map(newDescriptors.map((d) => [d.id, d]))
@@ -566,7 +657,7 @@ const childrenUpdateFunction = (descriptor) => {
 
     console.log('Children updated', prevDescriptors, newChildren)
     console.groupEnd()
-}
+})
 
 /** @param {vanilla.Component | vanilla.TextComponent | vanilla.StaticComponent | void} comp
     * @param {number} index
@@ -653,22 +744,26 @@ function renderAndBindConditional(descriptor, r) {
     descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
     descriptor.node = createElement(descriptor.rendered)
 
-    if (Array.isArray(rendered.children) && rendered.type !== 'textnode') {
+    if (rendered.type !== 'textnode') {
+        if (typeof rendered.children === 'string') {
+            rendered.children = [rendered.children]
+        }
+        assert(Array.isArray(rendered.children), `Children of ${rendered.type} should be an array`)
         for (const child of rendered.children) {
-            descriptor.children.push(render(child, /** @type {HTMLElement} */(descriptor.node)))
+            descriptor.children.push(render(child, /** @type {vanilla.ParentDescriptor} */(descriptor)))
         }
     }
 
     const marker = getMarkerNode(descriptor)
-    assert(!!marker, 'Cannot insert dynamic component without marker')
-    descriptor.parentNode.insertBefore(descriptor.node, marker)
+    assert(!!marker, 'Cannot insert dynamic component without a marker')
+    descriptor.parent.node.insertBefore(descriptor.node, marker)
     return descriptor
 }
 
 /** @param {vanilla.ComponentDescriptor} childDescriptor
     * @returns {Comment | void} commentNode */
 function getMarkerNode(childDescriptor) {
-    for (const node of childDescriptor.parentNode.childNodes) {
+    for (const node of childDescriptor.parent.node.childNodes) {
         if (node.nodeType === Node.COMMENT_NODE && /** @type {Comment} */(node).data === childDescriptor.id) {
             return /** @type {Comment} */ (node)
         }
@@ -683,6 +778,7 @@ function getMarkerNode(childDescriptor) {
     * @returns T */
 function evalAndBindUpdate(descriptor, update, type, arg0) {
     console.log('[EVAL]', descriptor, type)
+    if (!descriptor) console.warn('absent descriptor', update, type, arg0)
     window.__APP_STATE.lastSymbols.length = 0
     /** @type {T} */
     const result = update.call(update)
@@ -690,7 +786,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
     /// FIXME: This approach creates a lot of unnecessary bindings, when 'children' is statically rendered
     // which means on every 'EVAL' call, every child property call is also bond to 'children' update
 
-    window.__APP_STATE.lastSymbols.forEach(({ key, symbol }) => {
+    for (const { key, symbol } of window.__APP_STATE.lastSymbols) {
         // TODO: optimize deduplication
         const symbolBindings = window.__APP_STATE.updates[type].get(symbol)
         if (symbolBindings) {
@@ -702,8 +798,26 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
                     && (b.type === 'attribute' ? b.attributeName === arg0 : true)
                 ))
                 if (bindingExist) {
-                    console.log('[EVAL]', 'Binding exist')
-                    return result
+                    console.log('[EVAL]', 'Binding exist', type, key)
+                    continue
+                }
+
+                if (type === 'component') {
+                    // TODO: optimize
+                    // check if parent already bond to the same component update
+                    // which makes child binding useless, and harmfull (memory leaks occur)
+                    let d = descriptor
+                    if (typeof d === "undefined") console.log("[NOT FOUND] descriptor is undefined")
+                    while (d && d.id !== 'root') {
+                        for (const binding of propertyBindings) {
+                            if (binding.descriptor.id === d.id) {
+                                console.log('[EARLY EXIT]')
+                                // window.__APP_STATE.lastSymbols.length = 0
+                                return result
+                            }
+                        }
+                        d = d.parent
+                    }
                 }
             }
         }
@@ -722,7 +836,8 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
                 }
                 binding = typeBinding
                 break;
-            case "component":
+            case "component": {
+
                 /** @type {vanilla.ComponentBinding} */
                 const componentBinding = {
                     type,
@@ -733,6 +848,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
                 }
                 binding = componentBinding
                 break;
+            }
             case "attributes":
                 /** @type {vanilla.AttributesBinding} */
                 const attributesBinding = {
@@ -783,27 +899,36 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             state[key] = []
         }
         state[key].push(binding)
-    })
+    }
     window.__APP_STATE.lastSymbols.length = 0
     return result
 }
 
 /** @param {vanilla.Component} component 
-    * @param {HTMLElement} parentNode
+    * @param {vanilla.ParentDescriptor} parent
     * @param {Object} [options]
     * @param {boolean} [options.appendImmediately]
 * @returns {vanilla.ComponentDescriptor} */
-function render(component, parentNode, options) {
+function render(component, parent, options) {
     /** @type {vanilla.ComponentDescriptor} */
     const descriptor = {
         id: generateRandomId(),
         type: 'static',
-        parentNode,
+        parent,
         node: undefined,
-        component,
+        component: component,
         rendered: undefined,
         children: [],
         bindings: []
+    }
+
+    if ((typeof component === 'function' || typeof component === 'object') && ERR_BOUNDARY_KEY in component) {
+        descriptor.errorBoundaryComponent = /** @type {vanilla.ErrorBoundaryComponent} */ (component[ERR_BOUNDARY_KEY])
+        // WARN: timeout here to wait until item actually rendered
+        // it could happen error appear BEFORE container is inserted in DOM, so parent<->child check won't work
+        descriptor.renderErrorBoundary = (err) => setTimeout(() => renderErrorBoundary(descriptor, err), 1)
+    } else if (parent.renderErrorBoundary) {
+        descriptor.renderErrorBoundary = parent.renderErrorBoundary
     }
 
     const appendImmediately = options && options.appendImmediately !== undefined
@@ -811,25 +936,432 @@ function render(component, parentNode, options) {
         : true
 
     console.group('RENDER')
-    console.log('rendering', component, 'in', parentNode)
+    console.log('rendering', component, 'in', parent)
 
+    withErrorBoundary((descriptor) => {
+        let rendered = undefined
+
+        if (typeof component === 'function') {
+            console.log('its a function btw')
+
+            descriptor.type = 'dynamic'
+            const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
+
+            // regardless of function result
+            if (appendImmediately) parent.node.appendChild(new Comment(descriptor.id))
+
+            if (!isComponent(result)) {
+                console.log('its not a component')
+                console.groupEnd()
+                rendered = undefined
+                descriptor.rendered = undefined
+                return descriptor
+            }
+
+            if (typeof result === 'string') {
+                console.log('its resulted as textnode', result)
+                /** @type {vanilla.TextComponent} */
+                rendered = {
+                    type: 'textnode',
+                    attrs: {},
+                    children: result
+                }
+            } else {
+                console.log('its resulted as component', result)
+                rendered = {
+                    type: result.type,
+                    attrs: result.attrs || {},
+                    children: result.children
+                }
+            }
+        } else if (typeof component === 'string') {
+            console.log('its a string', component)
+            /** @type {vanilla.TextComponent} */
+            rendered = {
+                type: 'textnode',
+                attrs: {},
+                children: component
+            }
+        } else {
+            rendered = {
+                type: component.type,
+                attrs: component.attrs || {},
+                children: component.children
+            }
+            console.log('component rendered', rendered)
+        }
+
+        if (typeof rendered.type === 'function') {
+            console.log('eval type')
+            rendered.type = evalAndBindUpdate(descriptor, rendered.type, 'type')
+        }
+        if (typeof rendered.attrs === 'function') {
+            console.log('eval attrs')
+            rendered.attrs = evalAndBindUpdate(descriptor, /** @type {() => vanilla.AttrValue} */(rendered.attrs), 'attributes') || {}
+        }
+        if (typeof rendered.children === 'function') {
+            console.log('eval children')
+            rendered.children = evalAndBindUpdate(descriptor, rendered.children, 'children') || []
+        }
+
+        // attrs
+        // copy object, otherwise changes affect component
+        rendered.attrs = { ...rendered.attrs }
+
+        for (const attr in rendered.attrs) {
+            if (typeof rendered.attrs[attr] === 'function' && !attr.startsWith('on')) {
+                /** @type {vanilla.AttrValue} */
+                rendered.attrs[attr] = evalAndBindUpdate(
+                    descriptor,
+                /** @type {() => vanilla.AttrValue} */(rendered.attrs[attr]),
+                    'attribute',
+                    attr
+                )
+            }
+        }
+
+        assert(typeof rendered.type !== 'function', 'Cannot proceed with function type')
+        assert(!!rendered.type, 'Cannot render nullish element')
+        assert(typeof rendered.attrs !== 'function', 'Cannot proceed with function attributes')
+        assert(typeof rendered.children !== 'function', 'Cannot proceed with function children')
+        if (rendered.attrs) {
+            assert(Object.keys(rendered.attrs).every((k) => k.startsWith('on') || typeof rendered.attrs[k] !== 'function'))
+        }
+
+        descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
+        descriptor.node = createElement(descriptor.rendered)
+
+        if (descriptor.rendered.type !== 'textnode') {
+            if (typeof descriptor.rendered.children === 'string') {
+                descriptor.rendered.children = [descriptor.rendered.children]
+            }
+            console.log('rendering children', descriptor.rendered.children)
+            assert(Array.isArray(descriptor.rendered.children), `Children of ${descriptor.rendered.type} should be an array`)
+            for (const child of descriptor.rendered.children) {
+                descriptor.children.push(render(child, /** @type {vanilla.ParentDescriptor} */(descriptor)))
+            }
+        }
+
+
+        if (appendImmediately) {
+            if (descriptor.type === 'dynamic') parent.node.insertBefore(descriptor.node, getMarkerNode(descriptor) || undefined)
+            else parent.node.appendChild(descriptor.node)
+        }
+    })(descriptor)
+
+    console.groupEnd()
+    return descriptor
+}
+
+/** @param {vanilla.ComponentDescriptor} descriptor
+    * @param {Error} err */
+function renderErrorBoundary(descriptor, err) {
+    console.group('Render error boundary')
+    console.log('descriptor', descriptor, err)
+    assert(!!descriptor.errorBoundaryComponent, 'Cannot render absent error boundary')
+    assert(typeof descriptor.errorBoundaryComponent === 'function', 'Cannot render absent error boundary')
+
+    console.log('is child?', descriptor.parent.node, descriptor.node, descriptor.parent.node.contains(descriptor.node))
+    if (descriptor.parent.node.contains(descriptor.node)) {
+        descriptor.parent.node.removeChild(descriptor.node)
+        console.log("removing child", descriptor.parent.node, descriptor.node)
+    }
+
+    descriptor.node = undefined
+    descriptor.rendered = undefined
+
+    const marker = getMarkerNode(descriptor)
+    const renderResult = renderUnbindedComponent(descriptor.errorBoundaryComponent(err), descriptor.parent.node, marker)
+
+    descriptor.rendered = { ...renderResult.rendered, errorBoundaryRendered: true }
+    descriptor.node = renderResult.node
+}
+
+/** @param {vanilla.ComponentDescriptor} descriptor  */
+function rerender(descriptor) {
+    const component = descriptor.component
+    console.group('RE-RENDER')
+    console.log('rendering', component, 'in', parent)
+
+    withErrorBoundary(() => {
+        let rendered = undefined
+
+        if (typeof component === 'function') {
+            console.log('its a function btw')
+            const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
+
+            if (!isComponent(result)) {
+                console.log('its not a component')
+                console.groupEnd()
+                rendered = undefined
+                descriptor.rendered = undefined
+                return descriptor
+            }
+
+            if (typeof result === 'string') {
+                console.log('its resulted as textnode', result)
+                /** @type {vanilla.TextComponent} */
+                rendered = {
+                    type: 'textnode',
+                    attrs: {},
+                    children: result
+                }
+            } else {
+                console.log('its resulted as component', result)
+                rendered = {
+                    type: result.type,
+                    attrs: result.attrs || {},
+                    children: result.children
+                }
+            }
+        } else if (typeof component === 'string') {
+            console.log('its a string', component)
+            /** @type {vanilla.TextComponent} */
+            rendered = {
+                type: 'textnode',
+                attrs: {},
+                children: component
+            }
+        } else {
+            rendered = {
+                type: component.type,
+                attrs: component.attrs || {},
+                children: component.children
+            }
+            console.log('component rendered', rendered)
+        }
+
+        if (typeof rendered.type === 'function') {
+            console.log('eval type')
+            rendered.type = evalAndBindUpdate(descriptor, rendered.type, 'type')
+        }
+        if (typeof rendered.attrs === 'function') {
+            console.log('eval attrs')
+            rendered.attrs = evalAndBindUpdate(descriptor, /** @type {() => vanilla.AttrValue} */(rendered.attrs), 'attributes') || {}
+        }
+        if (typeof rendered.children === 'function') {
+            console.log('eval children')
+            rendered.children = evalAndBindUpdate(descriptor, rendered.children, 'children') || []
+        }
+
+        // attrs
+        // copy object, otherwise changes affect component
+        rendered.attrs = { ...rendered.attrs }
+
+        for (const attr in rendered.attrs) {
+            if (typeof rendered.attrs[attr] === 'function' && !attr.startsWith('on')) {
+                /** @type {vanilla.AttrValue} */
+                rendered.attrs[attr] = evalAndBindUpdate(
+                    descriptor,
+                    /** @type {() => vanilla.AttrValue} */(rendered.attrs[attr]),
+                    'attribute',
+                    attr
+                )
+            }
+        }
+
+        assert(typeof rendered.type !== 'function', 'Cannot proceed with function type')
+        assert(!!rendered.type, 'Cannot render nullish element')
+        assert(typeof rendered.attrs !== 'function', 'Cannot proceed with function attributes')
+        assert(typeof rendered.children !== 'function', 'Cannot proceed with function children')
+        if (rendered.attrs) {
+            assert(Object.keys(rendered.attrs).every((k) => k.startsWith('on') || typeof rendered.attrs[k] !== 'function'))
+        }
+
+        const oldNode = descriptor.node
+
+        descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
+        descriptor.node = createElement(descriptor.rendered)
+
+        if (descriptor.rendered.type !== 'textnode') {
+            if (typeof descriptor.rendered.children === 'string') {
+                descriptor.rendered.children = [descriptor.rendered.children]
+            }
+            console.log('rendering children', descriptor.rendered.children)
+            assert(Array.isArray(descriptor.rendered.children), `Children of ${descriptor.rendered.type} should be an array`)
+            // for (const child of descriptor.rendered.children) {
+            //     descriptor.children.push(render(child, /** @type {vanilla.ParentDescriptor} */(descriptor)))
+            // }
+        }
+
+
+        if (oldNode && descriptor.parent.node.contains(oldNode)) {
+            descriptor.parent.node.replaceChild(descriptor.node, oldNode)
+        } else if (descriptor.type === 'dynamic') {
+            const marker = getMarkerNode(descriptor)
+            assert(!!marker, 'Cannot insert dynamic node without marker')
+        } else {
+            const renderedChildren = descriptor.parent.children
+                .filter((d) => d.node && descriptor.parent.node.contains(d.node))
+            const nextNode = renderedChildren[renderedChildren.findIndex((d) => d.id === descriptor.id) + 1]?.node
+
+            descriptor.parent.node.insertBefore(descriptor.node, nextNode)
+        }
+    })(descriptor)
+
+    console.groupEnd()
+    return descriptor
+}
+
+
+/** @param {vanilla.ComponentDescriptor} descriptor */
+const renderUnbinded = withErrorBoundary((descriptor, component) => {
+    console.group('Unbinded component', descriptor)
+    if (component) descriptor.component = component
+    let rendered = undefined
+
+    if (typeof descriptor.component === 'function') {
+        console.log('its a function btw')
+
+        const result = descriptor.component()
+
+        if (!isComponent(result)) {
+            console.log('its not a component')
+            console.groupEnd()
+            return { rendered: undefined, node: undefined }
+        }
+
+        if (typeof result === 'string') {
+            console.log('its resulted as textnode', result)
+            /** @type {vanilla.TextComponent} */
+            rendered = {
+                type: 'textnode',
+                attrs: {},
+                children: result
+            }
+        } else {
+            console.log('its resulted as component', result)
+            rendered = {
+                type: result.type,
+                attrs: result.attrs || {},
+                children: result.children
+            }
+        }
+    } else if (typeof descriptor.component === 'string') {
+        console.log('its a string', descriptor.component)
+        /** @type {vanilla.TextComponent} */
+        rendered = {
+            type: 'textnode',
+            attrs: {},
+            children: descriptor.component
+        }
+    } else {
+        rendered = {
+            type: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (descriptor.component).type,
+            attrs: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (descriptor.component).attrs || {},
+            children: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (descriptor.component).children
+        }
+        console.log('component rendered', rendered)
+    }
+
+    if (typeof rendered.type === 'function') {
+        console.log('eval type')
+        rendered.type = rendered.type()
+    }
+    if (typeof rendered.attrs === 'function') {
+        console.log('eval attrs')
+        rendered.attrs = rendered.attrs()
+    }
+    if (typeof rendered.children === 'function') {
+        console.log('eval children')
+        rendered.children = rendered.children()
+    }
+
+    // attrs
+    // copy object, otherwise changes affect component
+    rendered.attrs = { ...rendered.attrs }
+
+    for (const attr in rendered.attrs) {
+        if (typeof rendered.attrs[attr] === 'function' && !attr.startsWith('on')) {
+            /** @type {vanilla.AttrValue} */
+            rendered.attrs[attr] = rendered.attrs[attr]()
+        }
+    }
+
+    assert(typeof rendered.type !== 'function', 'Cannot proceed with function type')
+    assert(!!rendered.type, 'Cannot render nullish element')
+    assert(typeof rendered.attrs !== 'function', 'Cannot proceed with function attributes')
+    assert(typeof rendered.children !== 'function', 'Cannot proceed with function children')
+    if (rendered.attrs) {
+        assert(Object.keys(rendered.attrs).every((k) => k.startsWith('on') || typeof rendered.attrs[k] !== 'function'))
+    }
+
+    const oldNode = descriptor.node
+    if (document.body.contains(oldNode)) oldNode.parentNode.removeChild(oldNode)
+
+    descriptor.node = createElement(rendered)
+    const children = []
+
+    if (rendered.type !== 'textnode') {
+        if (typeof rendered.children === 'string') {
+            rendered.children = [rendered.children]
+        }
+        console.log('rendering children', rendered.children)
+        if (rendered.children.length !== descriptor.children.length) {
+            console.log('Children', rendered.children.map(x => x), descriptor.children.map(x => x))
+            throw new Error('Children size is different')
+        }
+        assert(rendered.children.length === descriptor.children.length)
+        assert(Array.isArray(rendered.children), `Children of ${rendered.type} should be an array`)
+        for (let i = 0; i < descriptor.children.length; i++) {
+            const child = descriptor.children[i]
+            renderUnbinded(child, rendered.children[i])
+            if (child.type === 'dynamic') descriptor.node.appendChild(new Comment(child.id))
+        }
+        rendered.children = children
+    }
+    descriptor.rendered = /** @type {vanilla.TextComponent | vanilla.StaticComponent } */ (rendered)
+
+    const marker = getMarkerNode(descriptor)
+
+    if (marker) {
+        descriptor.parent.node.insertBefore(descriptor.node, marker)
+    } else {
+        descriptor.parent.node.appendChild(descriptor.node)
+    }
+
+    console.groupEnd()
+})
+
+/** @param {vanilla.ComponentDescriptor} descriptor */
+function recoverComponent(descriptor) {
+    console.group('[RECOVER]', descriptor.id)
+    assert(descriptor.rendered && descriptor.rendered.errorBoundaryRendered, 'Cannot recover actual component')
+
+    if (document.body.contains(descriptor.node)) {
+        console.log('Removing error boundary component')
+        descriptor.node.parentNode.removeChild(descriptor.node)
+    }
+
+    descriptor.node = undefined
+    descriptor.rendered = undefined
+    renderUnbinded(descriptor)
+
+    console.groupEnd()
+}
+
+/** 
+    * @typedef {Object} RenderResult
+    * @property {vanilla.StaticComponent} [RenderResult.rendered]
+    * @property {HTMLElement} [RenderResult.node]
+    *
+    * @param {vanilla.Component | (string | vanilla.DefinedComponent | vanilla.StaticComponent | vanilla.Falsy)} component
+    * @param {HTMLElement} parentNode
+    * @param {Comment | void} marker
+    * @returns {RenderResult} result */
+function renderUnbindedComponent(component, parentNode, marker) {
+    console.group('Unbinded component')
     let rendered = undefined
 
     if (typeof component === 'function') {
         console.log('its a function btw')
 
-        descriptor.type = 'dynamic'
-        const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
-
-        // regardless of function result
-        if (appendImmediately) parentNode.appendChild(new Comment(descriptor.id))
+        const result = component()
 
         if (!isComponent(result)) {
             console.log('its not a component')
             console.groupEnd()
-            rendered = undefined
-            descriptor.rendered = undefined
-            return descriptor
+            return { rendered: undefined, node: undefined }
         }
 
         if (typeof result === 'string') {
@@ -858,24 +1390,24 @@ function render(component, parentNode, options) {
         }
     } else {
         rendered = {
-            type: component.type,
-            attrs: component.attrs || {},
-            children: component.children
+            type: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (component).type,
+            attrs: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (component).attrs || {},
+            children: /** @type {vanilla.DefinedComponent | vanilla.StaticComponent} */ (component).children
         }
         console.log('component rendered', rendered)
     }
 
     if (typeof rendered.type === 'function') {
         console.log('eval type')
-        rendered.type = evalAndBindUpdate(descriptor, rendered.type, 'type')
+        rendered.type = rendered.type()
     }
     if (typeof rendered.attrs === 'function') {
         console.log('eval attrs')
-        rendered.attrs = evalAndBindUpdate(descriptor, /** @type {() => vanilla.AttrValue} */(rendered.attrs), 'attributes') || {}
+        rendered.attrs = rendered.attrs()
     }
     if (typeof rendered.children === 'function') {
         console.log('eval children')
-        rendered.children = evalAndBindUpdate(descriptor, rendered.children, 'children') || []
+        rendered.children = rendered.children()
     }
 
     // attrs
@@ -885,25 +1417,20 @@ function render(component, parentNode, options) {
     for (const attr in rendered.attrs) {
         if (typeof rendered.attrs[attr] === 'function' && !attr.startsWith('on')) {
             /** @type {vanilla.AttrValue} */
-            rendered.attrs[attr] = evalAndBindUpdate(
-                descriptor,
-                /** @type {() => vanilla.AttrValue} */(rendered.attrs[attr]),
-                'attribute',
-                attr
-            )
+            rendered.attrs[attr] = rendered.attrs[attr]()
         }
     }
 
-
     assert(typeof rendered.type !== 'function', 'Cannot proceed with function type')
+    assert(!!rendered.type, 'Cannot render nullish element')
     assert(typeof rendered.attrs !== 'function', 'Cannot proceed with function attributes')
     assert(typeof rendered.children !== 'function', 'Cannot proceed with function children')
     if (rendered.attrs) {
         assert(Object.keys(rendered.attrs).every((k) => k.startsWith('on') || typeof rendered.attrs[k] !== 'function'))
     }
 
-    descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
-    descriptor.node = createElement(descriptor.rendered)
+    const node = createElement(rendered)
+    const children = []
 
     if (rendered.type !== 'textnode') {
         if (typeof rendered.children === 'string') {
@@ -912,15 +1439,16 @@ function render(component, parentNode, options) {
         console.log('rendering children', rendered.children)
         assert(Array.isArray(rendered.children), `Children of ${rendered.type} should be an array`)
         for (const child of rendered.children) {
-            descriptor.children.push(render(child, /** @type {HTMLElement} */(descriptor.node)))
+            const res = renderUnbindedComponent(child, node)
+            if (res.rendered) children.push(res.rendered)
         }
+        rendered.children = children
     }
 
-
-    if (appendImmediately) parentNode.appendChild(descriptor.node)
-
+    if (marker) parentNode.insertBefore(node, marker)
+    else parentNode.appendChild(node)
     console.groupEnd()
-    return descriptor
+    return { rendered: /** @type {vanilla.StaticComponent }*/ (rendered), node }
 }
 
 /** @param {vanilla.DefinedComponent | vanilla.Falsy} component
@@ -929,10 +1457,32 @@ function isComponent(component) {
     return Boolean(component)
 }
 
+const appErrorBoundary = (err) => {
+    return e('div', { id: 'e-root-error-boundary', style: { padding: '12px', border: '1px solid black' } }, [
+        e('div', 'Error occured during app rendering:'),
+        e('code', err.toString())
+    ])
+}
+
 /** @param {vanilla.Component} rootComponent
     * @param {HTMLElement} container */
 function renderApp(rootComponent, container) {
-    const descriptor = render(rootComponent, container)
+    // TODO: make in a more elegant way
+    Object.defineProperty(rootComponent, ERR_BOUNDARY_KEY, {
+        value: appErrorBoundary,
+        enumerable: false,
+        writable: false,
+        configurable: false
+    })
+
+    const descriptor = render(
+        rootComponent,
+        /** @type {vanilla.ComponentDescriptor<vanilla.StaticComponent, vanilla.StaticComponent, HTMLElement>} */({
+            id: ROOT_DESCRIPTOR_ID,
+            node: container
+        })
+    )
+    window.__DESCRIPTOR = descriptor
     console.log("descriptor", descriptor)
 }
 
@@ -984,9 +1534,9 @@ function generateRandomId() {
     return 'e:' + result;
 }
 
+/** @template T */
 class ArrayWithNotify {
     /**
-     * @template T
      * @param {Array<T>} items
      * @param {() => void} notify
      */
