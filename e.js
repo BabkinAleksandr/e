@@ -944,11 +944,13 @@ function render(component, parent, options) {
         if (typeof component === 'function') {
             console.log('its a function btw')
 
+            // render regardless of function result
+            // and before eval, because it could throw
+            if (appendImmediately) parent.node.appendChild(new Comment(descriptor.id))
+
             descriptor.type = 'dynamic'
             const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
 
-            // regardless of function result
-            if (appendImmediately) parent.node.appendChild(new Comment(descriptor.id))
 
             if (!isComponent(result)) {
                 console.log('its not a component')
