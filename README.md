@@ -42,6 +42,10 @@ To have something in between heavy React, Vue, Angular apps;
 purely static or bloated backend generated JS;
 manually written JS scripts.
 
+Could be a good companion for Backend web frameworks,
+which does not have their own js generation,
+or which does have such, but less efficient and more heavy.
+
 ---
 
 But, essentially, for education purposes. I wonder if I'm cappable to do so.
