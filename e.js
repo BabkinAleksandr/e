@@ -326,9 +326,10 @@ const componentUpdateFunction = withErrorBoundary((descriptor) => {
                 console.log('Change from component to text');
             } else {
                 // it was text, but now it's not
-                console.log('Change from text to component');
+                console.log('Update component');
             }
-            // TODO: optimize
+            // TODO: optimize:
+            // do comparisons and make an update, ...or maybe not?
             unbindAndDelete(descriptor, { deleteMarker: false })
             renderAndBindConditional(descriptor, rendered)
         }
@@ -1063,7 +1064,6 @@ function renderErrorBoundary(descriptor, err) {
     assert(!!descriptor.errorBoundaryComponent, 'Cannot render absent error boundary')
     assert(typeof descriptor.errorBoundaryComponent === 'function', 'Cannot render absent error boundary')
 
-    console.log('is child?', descriptor.parent.node, descriptor.node, descriptor.parent.node.contains(descriptor.node))
     if (descriptor.parent.node.contains(descriptor.node)) {
         descriptor.parent.node.removeChild(descriptor.node)
         console.log("removing child", descriptor.parent.node, descriptor.node)
@@ -1298,17 +1298,19 @@ const renderUnbinded = withErrorBoundary((descriptor, component) => {
         if (typeof rendered.children === 'string') {
             rendered.children = [rendered.children]
         }
-        console.log('rendering children', rendered.children)
-        if (rendered.children.length !== descriptor.children.length) {
-            console.log('Children', rendered.children.map(x => x), descriptor.children.map(x => x))
-            throw new Error('Children size is different')
-        }
-        assert(rendered.children.length === descriptor.children.length)
+        console.log('rendering children', rendered.children.map(x => x), descriptor.children.map(x => x))
+        // >=, because during rerender, descriptor's children could be unbinded and deleted first
+        // and then, during new render, error could be thrown, which will leave children size 0
+        assert(rendered.children.length >= descriptor.children.length, 'Children size is different')
         assert(Array.isArray(rendered.children), `Children of ${rendered.type} should be an array`)
-        for (let i = 0; i < descriptor.children.length; i++) {
+        for (let i = 0; i < rendered.children.length; i++) {
             const child = descriptor.children[i]
-            renderUnbinded(child, rendered.children[i])
-            if (child.type === 'dynamic') descriptor.node.appendChild(new Comment(child.id))
+            if (!child) {
+                render(rendered.children[i], /** @type {vanilla.ParentDescriptor} */(descriptor), { appendImmediately: true })
+            } else {
+                renderUnbinded(child, rendered.children[i])
+                if (child.type === 'dynamic') descriptor.node.appendChild(new Comment(child.id))
+            }
         }
         rendered.children = children
     }
