@@ -21,6 +21,8 @@ const ROOT_DESCRIPTOR_ID = 'e:root'
 const ERR_BOUNDARY_KEY = '__e_error_boundary'
 const E_COMPONENT_KEY = '__is_e_component'
 
+// consoles causing huge performance deterioration
+// uncomment for memory-performance tests
 // console.group = () => void 0
 // console.groupEnd = () => void 0
 // console.log = () => void 0
