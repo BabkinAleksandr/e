@@ -2,6 +2,8 @@
 
 Yet another javascript library for modern web applications.
 
+**It's a WIP**. I mean it. The code is garbage, but will be refactored at the end.
+
 ## Features
 
 ### Zero-build
