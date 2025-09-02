@@ -128,6 +128,19 @@ export async function startServer() {
                     "Content-Type": "text/javascript"
                 }
             }),
+
+            "/refs": new Response(await Bun.file("./tests/refs.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/refs.js": new Response(await Bun.file("./tests/refs.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
+
         }
     })
     console.info('Serving on port 3002...')

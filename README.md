@@ -192,6 +192,10 @@ const state = createState({
         { name: 'item' }
     ]
 })
+const refs = {
+    valueDiv: r(), // 'r()' function stores the refeference to actual html or text element
+    text: r()
+}
 
 e('div', [
     // type is reactive
@@ -204,8 +208,13 @@ e('div', [
     e('div', () => `Value: ${state.value}`),
     // or children
     e('div', () => items.map((item) => (
-        e('div', item.name)
-    )))
+        // don't forget to supply special 'key' attribute in arrays rendering
+        e('div', { key: item.name }, item.name)
+    ))),
+    // store the reference to HTML element
+    e('div', { ref: refs.valueDiv }, 'Div element'),
+    // or to a text node
+    e('textnode', { ref: refs.text }, 'Text')
 ])
 
 ```
