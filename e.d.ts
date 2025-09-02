@@ -3,9 +3,11 @@ declare namespace vanilla {
     export type AttrValue = string | number | boolean | EventListener | Styles | void
     type Falsy = string | number | boolean | null | void
 
+    type Ref<T extends Text | HTMLElement> = { ref: T | undefined }
+
     interface SpecialAttributes {
         key?: string | number | (() => string | number)
-        ref?: () => void
+        ref?: Ref<Text | HTMLElement>
     }
 
     type Attributes = Record<string, AttrValue> & SpecialAttributes

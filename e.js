@@ -189,23 +189,45 @@ function createState(obj, parentSymbol, parentKey) {
     return /** @type {T} */ (stateProxy)
 }
 
+/** Holds the reference to a DOM element of a component
+    * If element is not rendered, value is undefined
+    * @returns {vanilla.Ref<HTMLElement>} */
+function r() {
+    return { ref: undefined }
+}
+
 /** @param {vanilla.StaticComponent | vanilla.TextComponent} component
   * @returns {component is vanilla.TextComponent} */
 function isTextComponent(component) {
     return component.type === 'textnode'
 }
 
+/** @param {unknown} item
+    * @returns {item is vanilla.Ref<Text|HTMLElement>}*/
+function isRef(item) {
+    return !!item && typeof item === 'object' && ('ref' in item)
+}
+
 /**
-    * @param {string | number | boolean | void | EventListener | CSSStyleDeclaration} value
+    * @param {string | number | boolean | void | EventListener | CSSStyleDeclaration | vanilla.Ref<HTMLElement>} value
     * @param {HTMLElement | Text} node
-    @param {string} attribute
-    * @param {string | number | boolean | void | EventListener | CSSStyleDeclaration} prevValue 
+    * @param {string} attribute
+    * @param {string | number | boolean | void | EventListener | CSSStyleDeclaration | vanilla.Ref<HTMLElement>} prevValue 
     * */
 function setOrUpdateAttribute(node, attribute, value, prevValue) {
     if (node instanceof Text) return
 
     // TODO: check if rerender or not
     if (attribute === 'key') return
+    // special attribute
+    if (attribute === 'ref') {
+        if (prevValue && value) {
+            // ref update. set the new ref value and erase previous one
+            /** @type {vanilla.Ref<HTMLElement>|undefined} */(value).ref = /** @type {vanilla.Ref<HTMLElement>|undefined} */ (prevValue).ref;
+            /** @type {vanilla.Ref<HTMLElement>|undefined} */(prevValue).ref = undefined
+        }
+        return
+    }
 
     if (attribute.startsWith('on')) {
         const eventName = /** @type {keyof HTMLElementEventMap} */(attribute.slice(2))
@@ -242,11 +264,17 @@ function setOrUpdateAttribute(node, attribute, value, prevValue) {
 /** @param {vanilla.StaticComponent} component
   * @returns {Text | HTMLElement} */
 function createElement(component) {
+    const refObj = component?.attrs?.ref
+    console.log('refObj', refObj)
+
     if (isTextComponent(component)) {
-        return document.createTextNode(component.children)
+        const textNode = document.createTextNode(component.children)
+        if (refObj) refObj.ref = textNode
+        return textNode
     }
 
     const node = document.createElement(component.type)
+    if (refObj) refObj.ref = node
 
     for (const attr in (component.attrs || {})) {
         setOrUpdateAttribute(node, attr, component.attrs[attr], undefined)
@@ -445,6 +473,8 @@ function unbindAndDelete(descriptor, options) {
     if (descriptor.parent.node.contains(descriptor.node)) {
         descriptor.parent.node.removeChild(descriptor.node)
     }
+
+    if (descriptor.rendered && !isTextComponent(descriptor.rendered) && descriptor.rendered.attrs?.ref) descriptor.rendered.attrs.ref.ref = undefined
     descriptor.node = undefined
     descriptor.rendered = undefined
 }
@@ -963,13 +993,17 @@ function render(component, parent, options) {
                 return descriptor
             }
 
-            if (typeof result === 'string') {
+            if (typeof result === 'string' || (typeof result === 'object' && result.type === 'textnode')) {
                 console.log('its resulted as textnode', result)
-                /** @type {vanilla.TextComponent} */
-                rendered = {
-                    type: 'textnode',
-                    attrs: {},
-                    children: result
+                if (typeof component === 'object') {
+                    rendered = result
+                } else {
+                    /** @type {vanilla.TextComponent} */
+                    rendered = {
+                        type: 'textnode',
+                        attrs: {},
+                        children: result
+                    }
                 }
             } else {
                 console.log('its resulted as component', result)
@@ -979,13 +1013,17 @@ function render(component, parent, options) {
                     children: result.children
                 }
             }
-        } else if (typeof component === 'string') {
+        } else if (typeof component === 'string' || (typeof component === 'object' && component.type === 'textnode')) {
             console.log('its a string', component)
-            /** @type {vanilla.TextComponent} */
-            rendered = {
-                type: 'textnode',
-                attrs: {},
-                children: component
+            if (typeof component === 'object') {
+                rendered = component
+            } else {
+                /** @type {vanilla.TextComponent} */
+                rendered = {
+                    type: 'textnode',
+                    attrs: {},
+                    children: component
+                }
             }
         } else {
             rendered = {
