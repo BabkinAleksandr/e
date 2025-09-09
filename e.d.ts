@@ -4,6 +4,14 @@ declare namespace vanilla {
     type Falsy = string | number | boolean | null | void
 
     type Ref<T extends Text | HTMLElement> = { ref: T | undefined }
+    type Computed<T> = { value: T }
+
+    export interface State<T extends Object> extends Proxy<T> {
+        onUpdate?: (k: string, cb: ((n: T[string | number]) => void)) => void
+        __originalObject?: T
+    }
+
+    type State<T> = ObjState<T> | ArrState<T>
 
     interface SpecialAttributes {
         key?: string | number | (() => string | number)
@@ -22,6 +30,7 @@ declare namespace vanilla {
         type: StaticComponent['type'] | DynamicComponentBody['type']
         attrs: StaticComponent['attrs'] | DynamicComponentBody['attrs']
         children: StaticComponent['children'] | DynamicComponentBody['children']
+
     }
     export type Component = string | DefinedComponent | (() => DefinedComponent) | (() => Falsy)
 
@@ -55,6 +64,10 @@ declare namespace vanilla {
         rendered: R
         children: ComponentDescriptor[]
         bindings: Binding[]
+        lifecycleHook: {
+            onMount: () => (() => void) | undefined
+            onUnmount?: () => void
+        }
     }
 
     interface BaseBinding {
@@ -79,6 +92,10 @@ declare namespace vanilla {
     interface ChildrenBinding extends BaseBinding {
         type: 'children'
     }
+    interface ComputedValueBinding extends BaseBinding {
+        type: 'computed_value'
+        descriptor: undefined
+    }
 
     export type Binding =
         | ComponentBinding
@@ -86,10 +103,8 @@ declare namespace vanilla {
         | AttributesBinding
         | AttributeBinding
         | ChildrenBinding
+        | ComputedValueBinding
 
-    export interface State<T extends Object> extends Proxy<T> {
-        __originalObject: T
-    }
 
     // DOM Updates
     export interface RemoveElementOperation {
