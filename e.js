@@ -13,8 +13,10 @@ window.__APP_STATE = {
         type: new Map(),
         attributes: new Map(),
         attribute: new Map(),
-        children: new Map()
-    }
+        children: new Map(),
+
+        computed_value: new Map(),
+    },
 }
 
 const ROOT_DESCRIPTOR_ID = 'e:root'
@@ -30,8 +32,15 @@ const E_COMPONENT_KEY = '__is_e_component'
 
 /** @returns {vanilla.Component} */
 function e() {
+    const lifecycleHook = { value: undefined }
     /** @type {vanilla.DefinedComponent} */
-    const component = {}
+    const component = {
+        lifecycleHook,
+    }
+    component.with = (h) => {
+        lifecycleHook.value = h
+        return component
+    }
 
     Object.defineProperty(component, E_COMPONENT_KEY, {
         configurable: false,
@@ -109,7 +118,7 @@ function emit(type, symbol, key) {
 
     if (type === 'set') {
         /** @type {vanilla.Binding['type'][]} */
-        const bindingsTypes = ['component', 'type', 'attributes', 'attribute', 'children']
+        const bindingsTypes = ['component', 'type', 'attributes', 'attribute', 'children', 'computed_value']
 
         bindingsTypes.forEach((bType) => {
             /** @type {Record<string, vanilla.Binding[]> | void} */
@@ -130,16 +139,28 @@ function emit(type, symbol, key) {
     }
 }
 
+const computedProperty = Symbol('computed')
+
 /** @template T extends (Object | Array)
     * @param {T} obj
     * @param {Symbol} [parentSymbol]
     * @param {string} [parentKey]
-    * @returns {T} */
-function createState(obj, parentSymbol, parentKey) {
+    * @param {Map<string|symbol, Array<Function>>} [parentCallbacks]
+    * @returns {vanilla.State<T>} */
+function createState(obj, parentSymbol, parentKey, parentCallbacks) {
     assert(Boolean(obj), 'Cannot create state of nullish value')
     assert(typeof obj === 'object', 'Cannot create state of plain value. Please, use Object or Array')
 
     const s = parentSymbol || Symbol(generateRandomId())
+
+    /** @type {Map<string|symbol, Array<Function>>} */
+    const callbacks = parentCallbacks || new Map()
+    const notifyUpdate = (key, symbol, value) => {
+        emit('set', symbol, /** @type {string} */(key))
+        if (callbacks.has(key)) {
+            callbacks.get(key).forEach((cb) => cb(value))
+        }
+    }
 
     if (Array.isArray(obj)) {
         const wrappedArr = new ArrayWithNotify(obj.map((item) => {
@@ -147,9 +168,9 @@ function createState(obj, parentSymbol, parentKey) {
                 return createState(item)
             }
             return item
-        }), () => emit('set', parentSymbol, parentKey))
+        }), (newValue) => notifyUpdate(parentKey, parentSymbol, newValue))
 
-        return /** @type {T} */(wrappedArr)
+        return /** @type {vanilla.State<T>} */(wrappedArr)
     }
 
     /** @type {ProxyHandler<Object>} */
@@ -162,31 +183,83 @@ function createState(obj, parentSymbol, parentKey) {
                 target,
                 p,
                 // bind only new arrays
-                Array.isArray(newValue) ? createState(newValue, s, /** @type {string} */(p)) : newValue,
+                Array.isArray(newValue)
+                    ? createState(newValue, s, /** @type {string} */(p), callbacks)
+                    : newValue,
                 receiver
             )
-            emit('set', s, /** @type {string} */(p))
+
+            notifyUpdate(p, s, newValue)
+
             return result
         },
+
         get(target, p, receiver) {
-            emit('get', s, /** @type {string} */(p))
+            if (p !== 'onUpdate') emit('get', s, /** @type {string} */(p))
             return Reflect.get(target, p, receiver)
         }
     }
-    /** @type {T} */
-    const state = /** @type {T} */ ({})
+
+    /** @type {vanilla.State<T>} */
+    const state =  {}
     for (const v in obj) {
-        if (typeof obj[v] === 'object' && Boolean(obj[v])) {
-            state[v] = createState(obj[v], s, v)
+        assert(v !== 'onUpdate', '`onUpdate` is a reserved key')
+        if (Array.isArray(obj[v])) {
+            state[v] = createState(obj[v], s, v, callbacks)
+        } else if (typeof obj[v] === 'object' && Boolean(obj[v])) {
+            state[v] = createState(obj[v])
         } else {
             state[v] = obj[v]
         }
     }
 
+    state.onUpdate = function(field, cb) {
+        if (!callbacks.has(field)) {
+            callbacks.set(field, [])
+        }
+        callbacks.get(field).push(cb)
+    }
+
+
     /** @type {vanilla.State<T>} */
     const stateProxy = new Proxy(state, handler)
-    stateProxy.__originalObject = obj
+        stateProxy.__originalObject = obj
+
     return /** @type {T} */ (stateProxy)
+}
+
+/** @template T
+    * @param {() => T} fn
+    * @returns {vanilla.Computed<T>} */
+function c(fn) {
+    window.__APP_STATE.lastSymbols.length = 0
+    const value = fn()
+    const container = createState({ value })
+    window.__APP_STATE.lastSymbols.forEach(({ key,symbol }) => {
+        if (!window.__APP_STATE.updates.computed_value.has(symbol)) {
+            window.__APP_STATE.updates.computed_value.set(symbol, {})
+        }
+        const state = window.__APP_STATE.updates.computed_value.get(symbol)
+        if (!(key in state)) {
+            state[key] = []
+        }
+
+        /** @type {vanilla.ComputedValueBinding} */
+        const valueBinding = {
+            type: 'computed_value',
+            key,
+            symbol,
+            descriptor: undefined,
+            updateFunction: () => {
+                console.log('update computed')
+                container.value = fn()
+            }
+        }
+
+        state[key].push(valueBinding)
+    })
+
+    return container
 }
 
 /** Holds the reference to a DOM element of a component
@@ -379,6 +452,9 @@ const componentUpdateFunction = withErrorBoundary((descriptor) => {
     if (!rendered && descriptor.rendered) {
         console.log('Component removed');
         unbindAndDelete(descriptor, { deleteMarker: false })
+        if (typeof descriptor.lifecycleHook.onUnmount === 'function') {
+            descriptor.lifecycleHook.onUnmount()
+        }
         console.groupEnd()
         return
     }
@@ -738,6 +814,9 @@ function renderAndBindConditional(descriptor, r) {
             attrs: r.attrs,
             children: r.children
         }
+        if (!descriptor.lifecycleHook.onMount) {
+            descriptor.lifecycleHook.onMount = r.lifecycleHook.value
+        }
     }
 
     if (typeof rendered.type === 'function') {
@@ -790,6 +869,12 @@ function renderAndBindConditional(descriptor, r) {
     const marker = getMarkerNode(descriptor)
     assert(!!marker, 'Cannot insert dynamic component without a marker')
     descriptor.parent.node.insertBefore(descriptor.node, marker)
+
+    if (typeof descriptor.lifecycleHook.onMount === 'function') {
+        const result = descriptor.lifecycleHook.onMount()
+        if (typeof result === 'function') descriptor.lifecycleHook.onUnmount = result
+    }
+
     return descriptor
 }
 
@@ -952,7 +1037,8 @@ function render(component, parent, options) {
         component: component,
         rendered: undefined,
         children: [],
-        bindings: []
+        bindings: [],
+        lifecycleHook: { onMount: undefined, onUnmount: undefined }
     }
 
     if ((typeof component === 'function' || typeof component === 'object') && ERR_BOUNDARY_KEY in component) {
@@ -984,7 +1070,6 @@ function render(component, parent, options) {
             descriptor.type = 'dynamic'
             const result = evalAndBindUpdate(descriptor, /** @type {() => (vanilla.DefinedComponent | vanilla.Falsy)} */(component), 'component')
 
-
             if (!isComponent(result)) {
                 console.log('its not a component')
                 console.groupEnd()
@@ -1012,6 +1097,7 @@ function render(component, parent, options) {
                     attrs: result.attrs || {},
                     children: result.children
                 }
+                descriptor.lifecycleHook.onMount = result.lifecycleHook.value
             }
         } else if (typeof component === 'string' || (typeof component === 'object' && component.type === 'textnode')) {
             console.log('its a string', component)
@@ -1073,6 +1159,11 @@ function render(component, parent, options) {
 
         descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
         descriptor.node = createElement(descriptor.rendered)
+
+        if (typeof descriptor.lifecycleHook.onMount === 'function') {
+            const result = descriptor.lifecycleHook.onMount()
+            if (typeof result === 'function') descriptor.lifecycleHook.onUnmount = result
+        }
 
         if (descriptor.rendered.type !== 'textnode') {
             if (typeof descriptor.rendered.children === 'string') {
@@ -1582,7 +1673,7 @@ function generateRandomId() {
 class ArrayWithNotify {
     /**
      * @param {Array<T>} items
-     * @param {() => void} notify
+     * @param {(newValue: Array<T>) => void} notify
      */
     constructor(items = [], notify) {
         this.arr = Array.isArray(items) ? items : [];
@@ -1620,7 +1711,7 @@ class ArrayWithNotify {
                     const oldLength = this.arr.length;
                     this.arr.length = value;
                     if (oldLength !== value) {
-                        this.notify();
+                        this.notify(this.arr);
                     }
                     return true;
                 }
@@ -1628,7 +1719,7 @@ class ArrayWithNotify {
                 // Handle numeric indices
                 if (!isNaN(Number(prop))) {
                     this.arr[prop] = this._wrapItem(value);
-                    this.notify();
+                    this.notify(this.arr);
                     return true;
                 }
 
@@ -1640,13 +1731,13 @@ class ArrayWithNotify {
 
     push() {
         const result = this.arr.push.apply(this.arr, this._wrapItems(arguments))
-        this.notify()
+        this.notify(this.arr)
         return result;
     }
 
     pop() {
         const result = this.arr.pop.call(this.arr)
-        if (result) this.notify()
+        if (result) this.notify(this.arr)
         return this._unwrapItem(result);
     }
 
@@ -1655,41 +1746,43 @@ class ArrayWithNotify {
         const deleteCount = arguments[1]
         const items = this._wrapItems(Array.prototype.slice.call(arguments, 2))
         const result = this.arr.splice.call(this.arr, start, deleteCount, ...items)
-        this.notify()
+        this.notify(this.arr)
         return this._unwrapItems(result);
     }
 
     sort() {
         const result = this.arr.sort.apply(this.arr, arguments)
-        this.notify()
+        this.notify(this.arr)
         return result;
     }
 
     shift() {
         const result = this.arr.shift.apply(this.arr, arguments)
-        if (result) this.notify()
+        if (result) this.notify(this.arr)
         return this._unwrapItem(result);
     }
 
     unshift() {
         const items = this._wrapItems(Array.prototype.slice.call(arguments))
         const result = this.arr.unshift.apply(this.arr, items)
-        this.notify()
+        this.notify(this.arr)
         return result;
     }
 
     reverse() {
         this.arr.reverse.apply(this.arr, arguments)
-        this.notify()
+        this.notify(this.arr)
         return this;
     }
 
     fill() {
         const value = this._wrapItem(arguments[0])
         this.arr.fill.call(this.arr, value, arguments[1], arguments[2])
-        this.notify()
+        this.notify(this.arr)
         return this
     }
+
+    onUpdate() {}
 
     // Your existing methods for push, pop, splice, etc. can be kept
     // but the Proxy will handle any methods you don't explicitly define
