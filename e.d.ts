@@ -26,11 +26,16 @@ declare namespace vanilla {
         children: string
     }
 
+    export type OnUnmountHook = (() => void) | undefined
+    export type OnMountHook = (() => void) | (() => OnMountHook) | undefined
+    export type LifecycleHook = { value: OnMountHook }
     export interface DefinedComponent {
         type: StaticComponent['type'] | DynamicComponentBody['type']
         attrs: StaticComponent['attrs'] | DynamicComponentBody['attrs']
         children: StaticComponent['children'] | DynamicComponentBody['children']
 
+        lifecycleHook: LifecycleHook
+        with: (cb: OnMountHook) => void
     }
     export type Component = string | DefinedComponent | (() => DefinedComponent) | (() => Falsy)
 
@@ -65,8 +70,8 @@ declare namespace vanilla {
         children: ComponentDescriptor[]
         bindings: Binding[]
         lifecycleHook: {
-            onMount: () => (() => void) | undefined
-            onUnmount?: () => void
+            onMount?: OnMountHook
+            onUnmount?: OnUnmountHook
         }
     }
 

@@ -32,6 +32,7 @@ const E_COMPONENT_KEY = '__is_e_component'
 
 /** @returns {vanilla.Component} */
 function e() {
+    /** @type {vanilla.LifecycleHook} */
     const lifecycleHook = { value: undefined }
     /** @type {vanilla.DefinedComponent} */
     const component = {
@@ -201,7 +202,7 @@ function createState(obj, parentSymbol, parentKey, parentCallbacks) {
     }
 
     /** @type {vanilla.State<T>} */
-    const state =  {}
+    const state = {}
     for (const v in obj) {
         assert(v !== 'onUpdate', '`onUpdate` is a reserved key')
         if (Array.isArray(obj[v])) {
@@ -223,7 +224,7 @@ function createState(obj, parentSymbol, parentKey, parentCallbacks) {
 
     /** @type {vanilla.State<T>} */
     const stateProxy = new Proxy(state, handler)
-        stateProxy.__originalObject = obj
+    stateProxy.__originalObject = obj
 
     return /** @type {T} */ (stateProxy)
 }
@@ -235,7 +236,7 @@ function c(fn) {
     window.__APP_STATE.lastSymbols.length = 0
     const value = fn()
     const container = createState({ value })
-    window.__APP_STATE.lastSymbols.forEach(({ key,symbol }) => {
+    window.__APP_STATE.lastSymbols.forEach(({ key, symbol }) => {
         if (!window.__APP_STATE.updates.computed_value.has(symbol)) {
             window.__APP_STATE.updates.computed_value.set(symbol, {})
         }
@@ -452,9 +453,6 @@ const componentUpdateFunction = withErrorBoundary((descriptor) => {
     if (!rendered && descriptor.rendered) {
         console.log('Component removed');
         unbindAndDelete(descriptor, { deleteMarker: false })
-        if (typeof descriptor.lifecycleHook.onUnmount === 'function') {
-            descriptor.lifecycleHook.onUnmount()
-        }
         console.groupEnd()
         return
     }
@@ -550,9 +548,14 @@ function unbindAndDelete(descriptor, options) {
         descriptor.parent.node.removeChild(descriptor.node)
     }
 
+
     if (descriptor.rendered && !isTextComponent(descriptor.rendered) && descriptor.rendered.attrs?.ref) descriptor.rendered.attrs.ref.ref = undefined
     descriptor.node = undefined
     descriptor.rendered = undefined
+
+    if (typeof descriptor.lifecycleHook.onUnmount === 'function') {
+        descriptor.lifecycleHook.onUnmount()
+    }
 }
 
 
@@ -688,11 +691,20 @@ const childrenUpdateFunction = withErrorBoundary((descriptor) => {
     console.log('prev children', descriptor.children.map((c) => c.rendered))
 
     const prevDescriptors = descriptor.children
-    // const prevIdToDescriptor = new Map(prevDescriptors.map((d) => [d.id, d]))
-    const prevKeyToDescriptor = new Map(prevDescriptors.map((d, i) => [getKeyFromAttributes(d.rendered, i), d]))
+    // considering several children could have the same key
+    const prevDescriptorsByKey = prevDescriptors.reduce((m, d, i) => {
+        const key = getKeyFromAttributes(d.rendered, i)
+        if (!m.has(key)) {
+            m.set(key, [])
+        }
+        m.get(key).push(d)
+        return m
+    }, /** @type {Map<string, Array<vanilla.ComponentDescriptor>>} */ new Map())
 
     const newDescriptors = newChildren.map((nc, i) => {
-        const prev = prevKeyToDescriptor.get(getKeyFromAttributes(nc, i))
+        const key = getKeyFromAttributes(nc, i)
+        // TODO: optimize shift()
+        const prev = (prevDescriptorsByKey.get(key) || []).shift()
         if (!prev) return render(nc, descriptor, { appendImmediately: false })
         return prev
     })
@@ -702,11 +714,11 @@ const childrenUpdateFunction = withErrorBoundary((descriptor) => {
         unbindAndDelete(d, { deleteMarker: true })
     })
 
-    const fragment = document.createDocumentFragment()
-    newDescriptors.forEach((d) => {
-        fragment.appendChild(d.node)
-        if (d.type === 'dynamic') fragment.appendChild(new Comment(d.id))
-    });
+    const fragment = document.createDocumentFragment();
+    for (const newDescriptor of newDescriptors) {
+        fragment.appendChild(newDescriptor.node)
+        if (newDescriptor.type === 'dynamic') fragment.appendChild(new Comment(newDescriptor.id))
+    }
 
     // TODO: optimize nodes update. Currently it just reappends elements
 
@@ -760,7 +772,7 @@ const childrenUpdateFunction = withErrorBoundary((descriptor) => {
     //     })
 
 
-    /** @type {HTMLElement} */(descriptor.node).innerHTML = null;
+    ;/** @type {HTMLElement} */(descriptor.node).innerHTML = null;
     descriptor.node.appendChild(fragment)
     descriptor.children = newDescriptors;
 
@@ -1117,6 +1129,7 @@ function render(component, parent, options) {
                 attrs: component.attrs || {},
                 children: component.children
             }
+            descriptor.lifecycleHook.onMount = component.lifecycleHook.value
             console.log('component rendered', rendered)
         }
 
@@ -1160,11 +1173,6 @@ function render(component, parent, options) {
         descriptor.rendered = /** @type {vanilla.StaticComponent} */ (rendered)
         descriptor.node = createElement(descriptor.rendered)
 
-        if (typeof descriptor.lifecycleHook.onMount === 'function') {
-            const result = descriptor.lifecycleHook.onMount()
-            if (typeof result === 'function') descriptor.lifecycleHook.onUnmount = result
-        }
-
         if (descriptor.rendered.type !== 'textnode') {
             if (typeof descriptor.rendered.children === 'string') {
                 descriptor.rendered.children = [descriptor.rendered.children]
@@ -1180,6 +1188,11 @@ function render(component, parent, options) {
         if (appendImmediately) {
             if (descriptor.type === 'dynamic') parent.node.insertBefore(descriptor.node, getMarkerNode(descriptor) || undefined)
             else parent.node.appendChild(descriptor.node)
+
+            if (typeof descriptor.lifecycleHook.onMount === 'function') {
+                const result = descriptor.lifecycleHook.onMount()
+                if (typeof result === 'function') descriptor.lifecycleHook.onUnmount = result
+            }
         }
     })(descriptor)
 
@@ -1210,6 +1223,7 @@ function renderErrorBoundary(descriptor, err) {
     descriptor.node = renderResult.node
 }
 
+// TODO: delete if not needed (not it's not used)
 /** @param {vanilla.ComponentDescriptor} descriptor  */
 function rerender(descriptor) {
     const component = descriptor.component
@@ -1782,7 +1796,7 @@ class ArrayWithNotify {
         return this
     }
 
-    onUpdate() {}
+    onUpdate() { }
 
     // Your existing methods for push, pop, splice, etc. can be kept
     // but the Proxy will handle any methods you don't explicitly define

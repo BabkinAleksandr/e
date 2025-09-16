@@ -63,6 +63,24 @@ document.addEventListener('e:init', () => {
         e('div', 'Hello, world!')
     ])
 
+    const App = e('main', { class: 'app' }, [
+        // element type, [attributes], children
+        // if you want to render just text as children, do it
+        e('a', { href: 'https://neovim.io', rel: 'noopened noreferrer' }, 'link text'),
+        // if you want to render one or several elements inside, pass the array of children
+        e('ul', [
+            e('li', 'one'),
+            e('li', 'two')
+        ]),
+        // or render several text nodes inside an element
+        e('p', [
+            'one',
+            'two',
+        ]),
+        // text could be rendered in this verbose way if you need to get a reference to a text node
+        e('textnode', { ref: r() }, 'text')
+    ])
+
     // render app in to a container
     renderApp(Rendering, document.getElementById('container'));
 })
@@ -217,6 +235,63 @@ e('div', [
     e('textnode', { ref: refs.text }, 'Text')
 ])
 
+```
+
+### Lifecycles
+
+```js
+
+// create state
+const state = createState({
+    showCounter: false,
+    counter: 0
+})
+
+// define some helper functions
+const showCounter = () => {
+    state.showCounter = true
+}
+
+const hideCounter = () => {
+    state.showCounter = false
+}
+
+
+const counterTimer = null
+// subscribe to 'showCounter' field update
+// provided callback is called with new value, when node is updated
+state.subscribe('showCounter', (v) => {
+    if (v) counterTimer = window.setInterval(() => state.counter++,1000)
+    else clearInterval(counterTimer)
+})
+state.subscribe('showCounter', (v) => {
+    if (!v) state.counter = 0
+})
+
+const CounterComponent = () => {
+    
+}
+
+const App = e('div', [
+    () => state.showCounter && e('div', () => `Counter: ${state.counter}`),
+    () => state.showCounter && e('div', [
+        // also, you can set mount and unmount hooks using '.with' method on a component
+        // the callback passed to it called when node is inserted in to dom
+        // and the function returned from callback is called on component unmount
+        // it works even on nested components
+        e('div', 'Nested child')
+            .with(() => {
+                // this is called on mount
+                counterTimer = window.setInterval(() => state.counter++,1000)
+                return () => {
+                    // this is called on unmount
+                    clearInterval(counterTimer)
+                }
+            })
+    ])
+])
+
+renderApp(App, document.getElementById('app'))
 ```
 
 ## Why

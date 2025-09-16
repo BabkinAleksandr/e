@@ -141,6 +141,17 @@ export async function startServer() {
                 }
             }),
 
+            "/lifecycles": new Response(await Bun.file("./tests/lifecycles.html").bytes(), {
+                headers: {
+                    "Content-Type": "text/html"
+                }
+            }),
+
+            "/lifecycles.js": new Response(await Bun.file("./tests/lifecycles.js").bytes(), {
+                headers: {
+                    "Content-Type": "text/javascript"
+                }
+            }),
         }
     })
     console.info('Serving on port 3002...')
