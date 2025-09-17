@@ -25,7 +25,7 @@ _Fits in 1Kb (gzipped)_!
 While project is WIP, there is a lot of code duplicates (really a lot),
 console statements and assertions, which would be remove in production minified build.
 
-Also, I think I could split it in to modules, because some features could not be really needed by everyone.
+Also, I think I could split it in to modules, because some features could not be really needed by everyone, but that's for future me to decide.
 
 ### Fast
 
@@ -37,6 +37,8 @@ Didn't decide about this yet.
 
 On one hand we have zero-build library to be used right away.
 But on the other hand, if we want to build something mid- or large-sized, where size and performance matter the most, modularity is necessary.
+
+I'll consider to implement some limited modularity.
 
 ## Quick start
 
@@ -320,8 +322,10 @@ Things this project doesn't have:
    But the whole purpose of this library is to keep javascript scripting in control.
 
 - Modules  
+   _Subject to change_
    As it's non-build pure javascript library, it's designed to be plugged in to page right away.
    JavaScript in browser does not support modules fully and it's not convenient to plug in each module by hand.
+   Some limited modularity would be a nice to have.
 
 # Name
 
