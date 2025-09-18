@@ -76,30 +76,34 @@ declare namespace vanilla {
     }
 
     interface BaseBinding {
+        id: string
         symbol: Symbol
         key: string
-        descriptor: ComponentDescriptor
         updateFunction: () => void
     }
     interface ComponentBinding extends BaseBinding {
         type: 'component'
+        descriptor: ComponentDescriptor
     }
     interface TypeBinding extends BaseBinding {
         type: 'type'
+        descriptor: ComponentDescriptor
     }
     interface AttributesBinding extends BaseBinding {
         type: 'attributes'
+        descriptor: ComponentDescriptor
     }
     interface AttributeBinding extends BaseBinding {
         type: 'attribute'
         attributeName: string
+        descriptor: ComponentDescriptor
     }
     interface ChildrenBinding extends BaseBinding {
         type: 'children'
+        descriptor: ComponentDescriptor
     }
     interface ComputedValueBinding extends BaseBinding {
         type: 'computed_value'
-        descriptor: undefined
     }
 
     export type Binding =

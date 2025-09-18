@@ -102,6 +102,52 @@ function errb(component, recoverComponent) {
     return component
 }
 
+/* SCHEDULER STUFF */
+// INFO: This is more about rapid updates handling rather than performance thing
+// User may want to update several state values at once, which would trigger updates on each of values
+// It could be the case, when partial update is not what user wants
+// Also, it deduplicates equal updates without user noticing any difference
+const CURRENT_CYCLE = { key: Symbol(), planned: false }
+/** @type {WeakMap<Symbol, Map<string, () => void>} */
+const UPDATES_MAP = new WeakMap()
+UPDATES_MAP.set(CURRENT_CYCLE.key, new Map())
+
+/** Runs every N milliseconds (depends on monitor refresh rate) */
+function runUpdatesCycle() {
+    const updates = [...UPDATES_MAP.get(CURRENT_CYCLE.key).values()]
+
+    if (updates.length > 0) {
+        UPDATES_MAP.delete(CURRENT_CYCLE.key)
+        delete CURRENT_CYCLE.key
+        CURRENT_CYCLE.key = Symbol()
+
+        UPDATES_MAP.set(CURRENT_CYCLE.key, new Map())
+        CURRENT_CYCLE.planned = false
+
+        for (const update of updates) {
+            update.call(update)
+        }
+    }
+}
+
+function planNextCycle() {
+    if (CURRENT_CYCLE.planned) return
+    CURRENT_CYCLE.planned = true
+    window.requestAnimationFrame(runUpdatesCycle)
+}
+
+/** @param {vanilla.Binding} binding */
+function scheduleNextUpdate(binding) {
+    assert(UPDATES_MAP.has(CURRENT_CYCLE.key), 'Cannot find updates key for curreny cycle')
+    const { id, symbol, key, type, attributeName = '' } = binding
+    // key to deduplicate update of the same element
+    // e.g. conditional component that subscribed to more than one state fields
+    const updateKey = `${id}:${symbol.description}:${key}:${type}:${attributeName}`
+    UPDATES_MAP.get(CURRENT_CYCLE.key).set(updateKey, binding.updateFunction)
+
+    planNextCycle()
+}
+
 /** @param {'get'|'set'} type
 * @param {Symbol} symbol
 * @param {string} [key] */
@@ -131,7 +177,7 @@ function emit(type, symbol, key) {
                 if (propertyBindings) {
                     console.log('prop bindings', propertyBindings)
                     propertyBindings.forEach((binding) => {
-                        binding.updateFunction.call(binding.updateFunction)
+                        scheduleNextUpdate(binding)
                     })
                 }
             }
@@ -247,10 +293,10 @@ function c(fn) {
 
         /** @type {vanilla.ComputedValueBinding} */
         const valueBinding = {
+            id: generateRandomId(),
             type: 'computed_value',
             key,
             symbol,
-            descriptor: undefined,
             updateFunction: () => {
                 console.log('update computed')
                 container.value = fn()
@@ -528,7 +574,7 @@ function unbindAndDelete(descriptor, options) {
         const propertyBindings = stateUpdatesMap[binding.key]
         if (!propertyBindings) return
 
-        stateUpdatesMap[binding.key] = propertyBindings.filter((b) => b.descriptor.id !== binding.descriptor.id)
+        stateUpdatesMap[binding.key] = propertyBindings.filter((b) => b.id !== binding.id)
     })
 
     descriptor.bindings = descriptor.bindings.filter((b) => !options.deleteComponentBinding && b.type === 'component')
@@ -923,7 +969,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             const propertyBindings = symbolBindings[key]
             if (propertyBindings) {
                 const bindingExist = Boolean(propertyBindings.find((b) =>
-                    b.descriptor.id == descriptor.id
+                    b.id == descriptor.id
                     && b.type === type
                     && (b.type === 'attribute' ? b.attributeName === arg0 : true)
                 ))
@@ -940,7 +986,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
                     if (typeof d === "undefined") console.log("[NOT FOUND] descriptor is undefined")
                     while (d && d.id !== 'root') {
                         for (const binding of propertyBindings) {
-                            if (binding.descriptor.id === d.id) {
+                            if (binding.id === d.id) {
                                 console.log('[EARLY EXIT]')
                                 // window.__APP_STATE.lastSymbols.length = 0
                                 return result
@@ -958,6 +1004,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             case "type":
                 /** @type {vanilla.TypeBinding} */
                 const typeBinding = {
+                    id: descriptor.id,
                     type,
                     key,
                     symbol,
@@ -970,6 +1017,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
 
                 /** @type {vanilla.ComponentBinding} */
                 const componentBinding = {
+                    id: descriptor.id,
                     type,
                     key,
                     symbol,
@@ -982,6 +1030,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             case "attributes":
                 /** @type {vanilla.AttributesBinding} */
                 const attributesBinding = {
+                    id: descriptor.id,
                     type,
                     key,
                     symbol,
@@ -993,6 +1042,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             case "attribute":
                 /** @type {vanilla.AttributeBinding} */
                 const attributeBinding = {
+                    id: descriptor.id,
                     type: 'attribute',
                     attributeName: arg0 || '',
                     key,
@@ -1005,6 +1055,7 @@ function evalAndBindUpdate(descriptor, update, type, arg0) {
             case "children":
                 /** @type {vanilla.ChildrenBinding} */
                 const childrenBinding = {
+                    id: descriptor.id,
                     type: 'children',
                     key,
                     symbol,
