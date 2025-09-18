@@ -76,7 +76,7 @@ describe("State Subscriptions & Computed Values", () => {
         const initial = await page.$eval("#computed-result-display", (el) => el.textContent);
         await page.click("#increment-counter-for-computed-btn");
         await page.waitForFunction(() =>
-            document.querySelector("#computed-result-display")?.textContent
+            document.querySelector("#computed-result-display")?.textContent === 'Computed result: 2'
         );
 
         const updated = await page.$eval("#computed-result-display", (el) => el.textContent);

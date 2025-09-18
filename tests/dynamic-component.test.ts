@@ -449,17 +449,6 @@ describe('Dynamic Component Behavior Tests', () => {
             expect(await page.$('#valid-from-null')).toBeTruthy();
         });
 
-        test.todo('component function throws error and recovers', async () => {
-            // This would need error boundary handling in your framework
-            // For now, test that other components continue to work
-
-            await page.click('#show-stable-component-btn');
-            await page.waitForSelector('#stable-component');
-
-            expect(await page.$('#stable-component')).toBeTruthy();
-            expect(await page.$eval('#stable-component', el => el.textContent)).toBe('Stable component');
-        });
-
         test('deeply nested conditional components', async () => {
             const getDeepOrder = async () => {
                 const container = await page.$('#deep-nesting-container');

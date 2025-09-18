@@ -299,7 +299,7 @@ document.addEventListener('e:init', () => {
     const EventLogDisplay = () => {
         return e('div', { class: 'event-log', id: 'event-log' }, [
             e('h4', 'Event Log:'),
-            e('div', () => state.eventLog.slice(-10).map((log) =>
+            e('div', { id: 'event-log-items' }, () => state.eventLog.slice(-10).map((log) =>
                 e('div', { key: `log-${log}` }, log)
             )),
             e('button', {

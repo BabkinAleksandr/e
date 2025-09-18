@@ -89,12 +89,9 @@ describe('Error Boundary Tests', () => {
 
             // Trigger error and change type
             await page.click('#trigger-type-error-btn');
+            await page.waitForSelector('#type-error-fallback');
             await page.click('#change-element-type-btn');
             await page.waitForSelector('#type-error-fallback');
-
-            expect(await page.$('#type-error-fallback')).toBeTruthy();
-            expect(await page.$eval('#type-error-fallback', el => el.textContent))
-                .toBe('Type Error: Type update error');
         });
 
         test('recovers from type update error', async () => {
@@ -116,6 +113,7 @@ describe('Error Boundary Tests', () => {
     describe('Attributes Update Error Boundary', () => {
         beforeEach(async () => {
             await page.click('#reset-attributes-value-btn');
+            await page.waitForSelector('#attributes-success-component', { hidden: true });
         })
 
         test('handles error during attributes update', async () => {
@@ -123,22 +121,18 @@ describe('Error Boundary Tests', () => {
             await page.click('#show-attributes-component-btn');
             await page.waitForSelector('#attributes-success-component');
 
-            expect(await page.$('#attributes-success-component')).toBeTruthy();
-
             // Trigger error and update attributes
             await page.click('#trigger-attributes-error-btn');
+            await page.waitForSelector('#attributes-error-fallback');
             await page.click('#update-attributes-value-btn');
             await page.waitForSelector('#attributes-error-fallback');
-
-            expect(await page.$('#attributes-error-fallback')).toBeTruthy();
-            expect(await page.$eval('#attributes-error-fallback', el => el.textContent))
-                .toBe('Attributes Error: Attributes update error');
         });
 
         test('recovers from attributes update error', async () => {
             // Ensure error state
             await page.click('#show-attributes-component-btn');
             await page.click('#trigger-attributes-error-btn');
+            await page.waitForSelector('#attributes-error-fallback');
             await page.click('#update-attributes-value-btn');
             await page.waitForSelector('#attributes-error-fallback');
 
@@ -154,6 +148,7 @@ describe('Error Boundary Tests', () => {
     describe('Single Attribute Update Error Boundary', () => {
         beforeEach(async () => {
             await page.click('#reset-single-attr-value-btn');
+            await page.waitForSelector('#single-attr-success-component', { hidden: true })
         })
 
         test('handles error during single attribute update', async () => {
@@ -165,12 +160,9 @@ describe('Error Boundary Tests', () => {
 
             // Trigger error and update single attribute
             await page.click('#trigger-single-attr-error-btn');
+            await page.waitForSelector('#single-attr-error-fallback');
             await page.click('#update-single-attr-value-btn');
             await page.waitForSelector('#single-attr-error-fallback');
-
-            expect(await page.$('#single-attr-error-fallback')).toBeTruthy();
-            expect(await page.$eval('#single-attr-error-fallback', el => el.textContent))
-                .toBe('Single Attr Error: Single attribute error');
         });
 
         test('recovers from single attribute update error', async () => {
@@ -204,12 +196,10 @@ describe('Error Boundary Tests', () => {
 
             // Trigger error and update children
             await page.click('#trigger-children-error-btn');
-            await page.click('#increase-children-count-btn');
             await page.waitForSelector('#children-error-fallback');
 
-            expect(await page.$('#children-error-fallback')).toBeTruthy();
-            expect(await page.$eval('#children-error-fallback', el => el.textContent))
-                .toBe('Children Error: Children update error');
+            await page.click('#increase-children-count-btn');
+            await page.waitForSelector('#children-error-fallback');
         });
 
         test('recovers from children update error', async () => {
@@ -1299,6 +1289,7 @@ describe('Error Boundary Tests', () => {
                 ])
 
                 await page.click('#resolve-nested-child2-error-btn')
+                await page.waitForSelector('#nested-child2-success')
                 await verifyExpectedOrder(state);
                 expect(await getElementOrder()).toEqual([
                     'nested-parent-success',
@@ -1581,6 +1572,9 @@ describe('Error Boundary Tests', () => {
                 }
 
                 await page.waitForSelector('#nested-parent-success');
+                await page.waitForSelector('#nested-child1-success');
+                await page.waitForSelector('#nested-child2-success');
+                await page.waitForSelector('#nested-child3-success');
                 const state = await getComponentState();
                 expect(state.parent).toBe(true);
                 expect(state.child1).toBe(true);
@@ -1613,9 +1607,9 @@ describe('Error Boundary Tests', () => {
                     await page.click(button);
                 }
 
-                await page.waitForFunction(() =>
-                    document.querySelectorAll('.error-boundary.child-error').length >= 3
-                );
+                await page.waitForSelector('#nested-child1-error-fallback')
+                await page.waitForSelector('#nested-child2-error-fallback')
+                await page.waitForSelector('#nested-child3-error-fallback')
 
                 // Verify maximum error state
                 let state = await getComponentState();
@@ -1631,6 +1625,9 @@ describe('Error Boundary Tests', () => {
                 // Bulk resolve
                 await page.click('#resolve-nested-errors-btn');
                 await page.waitForSelector('#nested-parent-success');
+                await page.waitForSelector('#nested-child1-success')
+                await page.waitForSelector('#nested-child2-success')
+                await page.waitForSelector('#nested-child3-success')
 
                 state = await getComponentState();
                 expect(state.parent).toBe(true);

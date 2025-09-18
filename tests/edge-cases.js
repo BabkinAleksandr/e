@@ -33,6 +33,10 @@ document.addEventListener('e:init', () => {
         errorLog: []
     });
 
+    const refs = {
+        external: r()
+    }
+
 
     const ErrorBoundary = (children) => {
         return errb(children, (err) => {
@@ -134,16 +138,17 @@ document.addEventListener('e:init', () => {
 
         return e('div', {
             id: 'external-dom-component',
-            ref: (el) => {
-                if (el) {
-                    // Simulate external DOM manipulation
-                    setTimeout(() => {
-                        el.innerHTML = '<span>Externally modified</span>';
-                        el.setAttribute('data-external', 'true');
-                    }, 50);
-                }
-            }
-        }, 'Original content');
+            ref: refs.external,
+        }, 'Original content')
+            .with(() => {
+                // Simulate external DOM manipulation
+                setTimeout(() => {
+                    if (refs.external) {
+                        refs.external.ref.innerHTML = '<span>Externally modified</span>';
+                        refs.external.ref.setAttribute('data-external', 'true');
+                    }
+                }, 50);
+            })
     };
 
     // State corruption test

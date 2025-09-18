@@ -105,18 +105,6 @@ export async function startServer() {
                 }
             }),
 
-            "/fuzzy-testing": new Response(await Bun.file("./tests/fuzzy-testing.html").bytes(), {
-                headers: {
-                    "Content-Type": "text/html"
-                }
-            }),
-
-            "/fuzzy-testing.js": new Response(await Bun.file("./tests/fuzzy-testing.js").bytes(), {
-                headers: {
-                    "Content-Type": "text/javascript"
-                }
-            }),
-
             "/error-boundary": new Response(await Bun.file("./tests/error-boundary.html").bytes(), {
                 headers: {
                     "Content-Type": "text/html"

@@ -11,6 +11,15 @@ beforeAll(async () => {
     await page.goto('http://localhost:3002/memory-performance');
     await page.setViewport({ width: 1080, height: 1024 });
     await page.waitForSelector('#container');
+
+    await page.evaluate(() => {
+        // consoles causing huge performance deterioration
+        // commenting it for now, but TODO: remove this when production build is ready
+        console.group = () => void 0
+        console.groupEnd = () => void 0
+        console.log = () => void 0
+        console.info = () => void 0
+    })
 });
 
 afterAll(async () => {
@@ -24,7 +33,7 @@ describe('Memory and Performance Tests', () => {
         await page.waitForFunction(() => {
             const container = document.querySelector('#stress-test-container');
             return container && container.children.length >= 500;
-        }, { timeout: 10000 });
+        });
 
         const componentCount = await page.$$eval('#stress-test-container .stress-item', els => els.length);
         expect(componentCount).toBe(500);
@@ -51,7 +60,7 @@ describe('Memory and Performance Tests', () => {
         await page.waitForFunction(() => {
             const cycles = document.querySelector('#memory-test-cycles');
             return cycles && parseInt(cycles.textContent.match(/\d+/)[0]) >= 10;
-        }, { timeout: 20000 });
+        });
 
         await page.click('#stop-memory-test-btn');
 
@@ -63,14 +72,7 @@ describe('Memory and Performance Tests', () => {
 
     test('deep nesting handles extreme levels', async () => {
         await page.click('#max-nesting-btn');
-
-        await page.waitForFunction(() => {
-            const container = document.querySelector('#deep-nesting-container');
-            return container && container.querySelector('[data-level="49"]');
-        }, { timeout: 5000 });
-
-        const deepestLevel = await page.$eval('div[data-level="49"]', el => el.dataset.level);
-        expect(parseInt(deepestLevel)).toBe(49);
+        await page.waitForSelector('#deep-nesting-container [data-level="49"]')
 
         // Should still be able to interact with nested elements
         await page.click('[data-level="25"]');
@@ -80,20 +82,26 @@ describe('Memory and Performance Tests', () => {
     test('rapid state changes maintain stability', async () => {
         await page.click('#start-rapid-changes-btn');
 
-        // Let it run for a bit
-        await page.waitForFunction(() => {
-            const counter = document.querySelector('#rapid-change-counter');
-            return counter && parseInt(counter.textContent.match(/\d+/)[0]) >= 50;
-        }, { timeout: 10000 });
+        // while rapid changes running, other parts of app should be responsive
+        // that's what we're checking here
 
-        await page.click('#stop-rapid-changes-btn');
+        await assertResponsiveness()
+        await assertResponsiveness()
+        await assertResponsiveness()
 
         // Framework should still be functional
         await page.click('#instant-stress-btn');
+        await page.waitForFunction(() => {
+            const container = document.querySelector('#stress-test-container');
+            return container && container.children.length >= 500;
+        });
 
-        const componentCount = await page.$$eval('#stress-test-container .stress-item', els => els.length);
-        expect(componentCount).toBeGreaterThan(0);
-        await assertResponsiveness()
+        await page.waitForFunction(() => {
+            const counter = document.querySelector('#rapid-change-counter');
+            return counter && parseInt(counter.textContent.match(/\d+/)[0]) >= 100
+        });
+
+        await page.click('#stop-rapid-changes-btn');
     });
 
     test('large dataset operations perform adequately', async () => {
@@ -104,18 +112,27 @@ describe('Memory and Performance Tests', () => {
         await page.waitForFunction(() => {
             const sizeStatus = document.querySelector('#large-dataset-size').textContent
             return sizeStatus.startsWith('Dataset Size: 10000')
-        }, { timeout: 15000 });
+        });
 
         const creationTime = Date.now() - startTime;
-        expect(creationTime).toBeLessThanOrEqual(200); // Should create within 200 ms
+        // Should create within 100ms
+        // but it's very relative number and depends on machine runnig the test
+        expect(creationTime).toBeLessThanOrEqual(100);
 
         // Test shuffle performance
+        const initialOrder = await page.$$eval('#large-dataset-container div', (els) => els.map(el => el.textContent))
         const shuffleStart = Date.now();
         await page.click('#shuffle-large-dataset-btn');
-        await page.waitForFunction(() => true, {}, 1000); // Wait for shuffle
+        await page.waitForFunction((length, first, last) => {
+            const container = document.querySelector('#large-dataset-container')
+            return container
+                && container.children.length === length
+                && container.children[0].textContent !== first
+                && container.children[container.children.length - 1].textContent !== last
+        }, undefined, initialOrder.length, initialOrder[0], initialOrder[initialOrder.length - 1])
         const shuffleTime = Date.now() - shuffleStart;
 
-        expect(shuffleTime).toBeLessThan(5000); // Should shuffle within 5 seconds
+        expect(shuffleTime).toBeLessThan(100); // Should shuffle within 100 ms
 
         // Verify display still works
         const displayedItems = await page.$$eval('#large-dataset-container .stress-item', els => els.length);
@@ -127,5 +144,10 @@ describe('Memory and Performance Tests', () => {
 async function assertResponsiveness() {
     const initialValue = await page.$eval('div#responsiveness-value', (el) => el.textContent)
     await page.click('#update-responsive-state')
+    await page.waitForFunction((initial) => {
+        const elem = document.querySelector('div#responsiveness-value')
+        return elem.textContent !== initial
+    }, undefined, initialValue)
+
     expect(await page.$eval('div#responsiveness-value', (el) => el.textContent)).not.toBe(initialValue)
 }

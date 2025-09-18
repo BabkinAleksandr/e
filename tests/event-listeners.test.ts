@@ -26,10 +26,25 @@ describe('Event Listener Update Tests', () => {
         });
     };
 
+    const waitForEventRegistered = async (ev: 'click' | 'mouse' | 'focus') => {
+        let eventText = ''
+        if (ev === 'click') eventText = 'Click:'
+        if (ev === 'mouse') eventText = 'Mouse:'
+        if (ev === 'focus') eventText = 'Focus:'
+
+        await page.waitForFunction((e) => {
+            const log = document.querySelector('#event-log');
+            return log && log.textContent.includes('Event Log:') && log.textContent.includes(e);
+        }, undefined, eventText)
+    }
+
     const getEventLogEntries = async () => {
-        return await page.$$eval('#event-log div:not(:first-child):not(:last-child)', els =>
-            els.map(el => el.textContent).filter(text => text.trim())
-        );
+        return page.evaluate(() => {
+            const logItems = [...document.querySelectorAll('#event-log-items div')]
+            return logItems
+                .map(el => el.textContent)
+                .filter(text => text.trim())
+        })
     };
 
     describe('Component-Level Event Updates', () => {
@@ -45,6 +60,7 @@ describe('Event Listener Update Tests', () => {
 
             // Test event handler works
             await page.click('#event-component');
+            await waitForEventRegistered('click')
 
             const logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(true);
@@ -58,6 +74,8 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('#event-component');
 
             await page.click('#event-component');
+            await waitForEventRegistered('click')
+
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(true);
 
@@ -72,22 +90,20 @@ describe('Event Listener Update Tests', () => {
 
             // Click should not work anymore
             await page.click('#event-component');
+            await waitForUpdates()
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(false);
 
             // Mouseenter should work
             await page.hover('#event-component');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Mouse: component');
-            });
+            await waitForEventRegistered('mouse')
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse: component'))).toBe(true);
         });
 
         test('component disappears and event handlers are cleaned up', async () => {
-            await clearEventLog();
+            await page.reload()
 
             // Ensure component is visible and working
             await page.click('#show-event-component-btn');
@@ -95,6 +111,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('#event-component');
 
             await page.click('#event-component');
+            await waitForEventRegistered('click')
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(true);
 
@@ -108,6 +125,7 @@ describe('Event Listener Update Tests', () => {
 
             await clearEventLog();
             await page.click('#event-component');
+            await waitForEventRegistered('click')
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(true);
@@ -123,6 +141,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('button#type-event-element');
 
             await page.click('#type-event-element');
+            await waitForEventRegistered('click')
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: type-element'))).toBe(true);
 
@@ -134,6 +153,7 @@ describe('Event Listener Update Tests', () => {
 
             // Click handler should still work
             await page.click('#type-event-element');
+            await waitForEventRegistered('click')
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: type-element'))).toBe(true);
         });
@@ -146,6 +166,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('button#type-event-element');
 
             await page.focus('#type-event-element');
+            await waitForEventRegistered('focus')
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Focus: type-element'))).toBe(true);
 
@@ -156,6 +177,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('div#type-event-element');
 
             await page.focus('#type-event-element');
+            await waitForEventRegistered('focus')
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Focus: type-element'))).toBe(true);
         });
@@ -167,10 +189,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('button#type-event-element');
 
             await page.hover('#type-event-element');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Mouse: type-element');
-            });
+            await waitForEventRegistered('mouse')
 
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse: type-element'))).toBe(true);
@@ -182,10 +201,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('input#type-event-element');
 
             await page.hover('#type-event-element');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Mouse: type-element');
-            });
+            await waitForEventRegistered('mouse')
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse: type-element'))).toBe(true);
@@ -201,6 +217,7 @@ describe('Event Listener Update Tests', () => {
             await page.waitForSelector('#attributes-event-element');
 
             await page.click('#attributes-event-element');
+            await waitForEventRegistered('click')
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: attributes-single'))).toBe(true);
 
@@ -208,29 +225,24 @@ describe('Event Listener Update Tests', () => {
 
             // Change to multiple events
             await page.click('#set-multiple-attrs-btn');
-            await delay(100) // Small delay for update
+            await waitForUpdates()
 
             // Test click handler
             await page.click('#attributes-event-element');
+            await waitForEventRegistered('click')
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: attributes-multiple'))).toBe(true);
 
             // Test mouse handler
             await page.hover('#attributes-event-element');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Mouse: attributes-multiple');
-            });
+            await waitForEventRegistered('mouse')
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse: attributes-multiple'))).toBe(true);
 
             // Test focus handler
             await page.focus('#attributes-event-element');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Focus: attributes-multiple');
-            });
+            await waitForEventRegistered('focus')
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Focus: attributes-multiple'))).toBe(true);
@@ -245,10 +257,7 @@ describe('Event Listener Update Tests', () => {
 
             // Verify mouse handler works
             await page.hover('#attributes-event-element');
-            await page.waitForFunction(() => {
-                const log = document.querySelector('#event-log');
-                return log && log.textContent.includes('Mouse: attributes-multiple');
-            });
+            await waitForEventRegistered('mouse')
 
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse: attributes-multiple'))).toBe(true);
@@ -257,10 +266,11 @@ describe('Event Listener Update Tests', () => {
 
             // Change to mixed mode (removes mouse handler)
             await page.click('#set-mixed-attrs-btn');
-            await delay(100);
+            await waitForUpdates()
 
             // Click should still work
             await page.click('#attributes-event-element');
+            await waitForEventRegistered('click')
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: attributes-mixed'))).toBe(true);
 
@@ -268,7 +278,7 @@ describe('Event Listener Update Tests', () => {
 
             // Mouse handler should be removed (no new events should be logged)
             await page.hover('#attributes-event-element');
-            await delay(200)
+            await waitForUpdates()
 
             logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Mouse:'))).toBe(false);
@@ -284,12 +294,13 @@ describe('Event Listener Update Tests', () => {
             await page.click('#add-event-child-btn');
             await page.waitForFunction(() => {
                 const children = document.querySelectorAll('#children-event-container button');
-                return children.length > 2;
+                return children.length === 3;
             });
 
             // Find and click the new child
             const newChild = await page.$('#children-event-container button:last-child');
             await newChild.click();
+            await waitForEventRegistered('click')
 
             const logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: child-'))).toBe(true);
@@ -302,7 +313,7 @@ describe('Event Listener Update Tests', () => {
             await page.click('#add-event-child-btn');
             await page.waitForFunction(() => {
                 const children = document.querySelectorAll('#children-event-container button');
-                return children.length > 0;
+                return children.length === 4;
             });
 
             const initialCount = await page.$$eval('#children-event-container button', els => els.length);
@@ -317,21 +328,25 @@ describe('Event Listener Update Tests', () => {
             // Remaining children should still work
             const remainingChildren = await page.$$('#children-event-container button');
             if (remainingChildren.length > 0) {
+                await clearEventLog()
                 await remainingChildren[0].click();
+                await waitForEventRegistered('click')
                 const logs = await getEventLogEntries();
                 expect(logs.some(log => log.includes('Click: child-'))).toBe(true);
             }
         });
 
         test('shuffled children maintain their event handlers', async () => {
-            await clearEventLog();
+            await page.reload()
+            await waitForUpdates()
+            await page.waitForSelector('#children-event-container')
 
             // Ensure we have multiple children
             await page.click('#add-event-child-btn');
             await page.click('#add-event-child-btn');
             await page.waitForFunction(() => {
                 const children = document.querySelectorAll('#children-event-container button');
-                return children.length >= 3;
+                return children.length === 4;
             });
 
             // Get initial order
@@ -341,20 +356,18 @@ describe('Event Listener Update Tests', () => {
 
             // Shuffle children
             await page.click('#shuffle-event-children-btn');
-            await page.waitForFunction((prevOrder) => {
+            await page.waitForFunction((length) => {
                 const children = document.querySelectorAll('#children-event-container button');
-                const currentOrder = Array.from(children).map(el => el.textContent);
-                return JSON.stringify(currentOrder) !== JSON.stringify(prevOrder);
-            }, {}, initialOrder);
+                return children.length === length
+            }, undefined, initialOrder.length);
 
             // Test that all children still have working event handlers
             const children = await page.$$('#children-event-container button');
-            for (let i = 0; i < Math.min(children.length, 3); i++) {
+            for (let i = 0; i < 4; i++) {
+                await clearEventLog()
                 await children[i].click();
+                await waitForEventRegistered('click')
             }
-
-            const logs = await getEventLogEntries();
-            expect(logs.filter(log => log.includes('Click: child-')).length).toBeGreaterThanOrEqual(3);
         });
     });
 
@@ -432,9 +445,10 @@ describe('Event Listener Update Tests', () => {
 
             // Test click
             await page.click('#set-click-rapid-btn');
-            await delay(100)
+            await waitForUpdates()
 
             await page.click('#rapid-event-element');
+            await waitForEventRegistered('click')
             let logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: rapid-'))).toBe(true);
 
@@ -442,9 +456,10 @@ describe('Event Listener Update Tests', () => {
 
             // Test double click
             await page.click('#set-dblclick-rapid-btn');
-            await delay(100)
+            await waitForUpdates()
 
             await page.click('#rapid-event-element', { count: 2 });
+            await waitForUpdates()
 
             await page.waitForFunction(() => {
                 const log = document.querySelector('#event-log');
@@ -458,9 +473,10 @@ describe('Event Listener Update Tests', () => {
 
             // Test context menu
             await page.click('#set-contextmenu-rapid-btn');
-            await delay(100)
+            await waitForUpdates()
 
             await page.click('#rapid-event-element', { button: 'right' });
+            await waitForUpdates()
 
             await page.waitForFunction(() => {
                 const log = document.querySelector('#event-log');
@@ -474,12 +490,8 @@ describe('Event Listener Update Tests', () => {
         test('batch updates work correctly', async () => {
             await clearEventLog();
 
-            // update to another state to make next selector to wait properly
-            // await page.click('#set-click-rapid-btn');
-            // await delay(100)
-
             await page.click('#rapid-batch-update-btn');
-            await delay(200)
+            await waitForUpdates()
 
             // Wait for all batch updates to complete
             await page.waitForFunction(() => {
@@ -505,13 +517,14 @@ describe('Event Listener Update Tests', () => {
             await clearEventLog();
 
             await page.click('#prevent-default-off-btn')
+            await waitForUpdates()
 
             // Test link without preventDefault (should navigate)
             const initialUrl = page.url();
             await page.click('#test-link');
 
             // Wait a bit and check if URL changed (link should work)
-            await delay(200)
+            await waitForUpdates()
             const urlAfterClick = page.url();
             expect(urlAfterClick).toContain('#test-anchor');
 
@@ -536,7 +549,7 @@ describe('Event Listener Update Tests', () => {
             const urlBeforeClick = page.url();
             await page.click('#test-link');
 
-            await delay(200)
+            await waitForUpdates()
             const urlAfterPreventedClick = page.url();
             expect(urlAfterPreventedClick).toBe(urlBeforeClick); // URL should not change
 
@@ -687,7 +700,7 @@ describe('Event Listener Update Tests', () => {
                     await page.click('#prevent-default-on-btn')
                     await page.click('#stop-propagation-on-btn')
                 }
-                await delay(50)
+                await waitForUpdates()
             }
 
             // Verify final state
@@ -782,9 +795,14 @@ describe('Event Listener Update Tests', () => {
                 await page.click('#set-mouseenter-event-btn');
                 await page.click('#set-click-event-btn');
             }
+            await page.waitForFunction(() => {
+                const elem = document.querySelector('#event-component')
+                return elem.textContent === 'Component with click handler'
+            })
 
             // Final test
             await page.click('#event-component');
+            await waitForEventRegistered('click')
             const logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: component'))).toBe(true);
         });
@@ -797,15 +815,15 @@ describe('Event Listener Update Tests', () => {
                 await page.click('#set-button-type-btn')
                 await page.click('#set-div-type-btn')
                 await page.click('#set-input-type-btn')
-                await delay(50)
             }
 
             // Ensure final state has handler
             await page.click('#set-button-type-btn')
-            await delay(100)
+            await page.waitForSelector('button#type-event-element')
 
             // Test handlers work
-            await page.click('#type-event-element');
+            await page.click('button#type-event-element');
+            await waitForEventRegistered('click')
             const logs = await getEventLogEntries();
             expect(logs.some(log => log.includes('Click: type-element'))).toBe(true);
         });
@@ -821,14 +839,15 @@ describe('Event Listener Update Tests', () => {
                 await page.click('#set-single-attrs-btn');
                 await page.click('#set-multiple-attrs-btn');
                 await page.click('#set-mixed-attrs-btn');
-                await delay(50)
             }
 
             // Final test - only current handlers should work
             await page.click('#set-single-attrs-btn');
-            await delay(100)
+            await page.waitForSelector('#attributes-event-element:not([tabindex="0"])')
+            await page.waitForSelector('#attributes-event-element:not([data-test="mixed-mode"])')
 
             await page.click('#attributes-event-element');
+            await waitForEventRegistered('click')
             const logs = await getEventLogEntries();
 
             // Should only have one click event, not multiple from old handlers
@@ -843,4 +862,14 @@ function delay(time: number): Promise<void> {
     return new Promise(function(resolve) {
         setTimeout(resolve, time)
     });
+}
+
+async function waitForUpdates() {
+    await page.evaluate(async () => {
+        return new Promise((resolve) => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(resolve)
+            })
+        })
+    })
 }

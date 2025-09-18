@@ -134,7 +134,7 @@ document.addEventListener('e:init', () => {
 
     const PerformanceListComponent = () => {
         return e('div', { id: 'performance-list-container' }, () =>
-            state.performanceItems.slice(0, 20).map(item => // Show only first 20 for visibility
+            state.performanceItems.map(item =>
                 e('div', {
                     id: `perf-item-${item.id}`,
                     class: 'item performance-item',
@@ -389,7 +389,7 @@ document.addEventListener('e:init', () => {
                 e('button', {
                     id: 'shuffle-nested-parents-btn',
                     onclick: () => {
-                        state.nestedItems = shuffleArray(state.nestedItems);
+                        shuffleArray(state.nestedItems);
                     }
                 }, 'Shuffle Parents'),
                 e('button', {
@@ -397,7 +397,7 @@ document.addEventListener('e:init', () => {
                     onclick: () => {
                         if (state.nestedItems.length > 0) {
                             const parent = state.nestedItems[0];
-                            parent.children = shuffleArray(parent.children);
+                            shuffleArray(parent.children);
                         }
                     }
                 }, 'Shuffle First Parent Children')
@@ -452,7 +452,7 @@ document.addEventListener('e:init', () => {
                 e('button', {
                     id: 'shuffle-keyed-btn',
                     onclick: () => {
-                        state.keyedItems = shuffleArray(state.keyedItems);
+                        shuffleArray(state.keyedItems);
                     }
                 }, 'Shuffle Keyed'),
                 e('button', {

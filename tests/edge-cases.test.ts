@@ -91,7 +91,7 @@ describe('Edge Cases and Error Handling', () => {
         expect(updatedText).toBe('Async update completed');
     });
 
-    test.todo('survives external DOM manipulation', async () => {
+    test('survives external DOM manipulation', async () => {
         await page.click('#trigger-external-dom-btn');
         await page.waitForSelector('#external-dom-component');
 

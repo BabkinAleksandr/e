@@ -370,6 +370,10 @@ document.addEventListener('e:init', () => {
                     onclick: () => state.singleId = state.singleId === 'element-1' ? 'element-2' : 'element-1'
                 }, 'Toggle ID'),
                 e('button', {
+                    id: 'set-initial-id-btn',
+                    onclick: () => state.singleId = 'element-1'
+                }, 'Set initial ID'),
+                e('button', {
                     id: 'update-title-btn',
                     onclick: () => state.singleTitle = state.singleTitle === 'Initial title' ? 'Updated title' : 'Initial title'
                 }, 'Toggle Title'),

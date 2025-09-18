@@ -118,7 +118,7 @@ describe("Ref attribute functionality", () => {
         expect(refB).toBeUndefined();
 
         await page.click("#set-ref-b-btn");
-        await page.waitForSelector("#swap-ref-element");
+        await page.waitForFunction(() => !window.__TEST_REFS.swapA.ref)
 
         const refAAfter = await page.evaluate(() => window.__TEST_REFS.swapA.ref);
         const refBAfter = await page.evaluate(() => window.__TEST_REFS.swapB.ref);

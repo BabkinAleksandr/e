@@ -23,6 +23,7 @@ describe('Dynamic Children Update Tests', () => {
             // Reset to known state
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-4', { hidden: true });
 
             // Get initial order
             const getOrder = async () => {
@@ -44,6 +45,7 @@ describe('Dynamic Children Update Tests', () => {
         test('adds item to middle of list', async () => {
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-4', { hidden: true });
 
             const getOrder = async () => {
                 const items = await page.$$eval('#simple-list-container .item', els =>
@@ -55,7 +57,7 @@ describe('Dynamic Children Update Tests', () => {
             expect(await getOrder()).toEqual(['Item 1', 'Item 2', 'Item 3']);
 
             await page.click('#add-simple-middle-btn');
-            await page.waitForSelector('#simple-item-3');
+            await page.waitForSelector('#simple-item-4');
 
             expect(await getOrder()).toEqual(['Item 1', 'Item 4', 'Item 2', 'Item 3']);
         });
@@ -63,6 +65,7 @@ describe('Dynamic Children Update Tests', () => {
         test('adds item to end of list', async () => {
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-4', { hidden: true });
 
             const getOrder = async () => {
                 const items = await page.$$eval('#simple-list-container .item', els =>
@@ -74,7 +77,7 @@ describe('Dynamic Children Update Tests', () => {
             expect(await getOrder()).toEqual(['Item 1', 'Item 2', 'Item 3']);
 
             await page.click('#add-simple-end-btn');
-            await page.waitForSelector('#simple-item-3');
+            await page.waitForSelector('#simple-item-4');
 
             expect(await getOrder()).toEqual(['Item 1', 'Item 2', 'Item 3', 'Item 4']);
         });
@@ -82,6 +85,7 @@ describe('Dynamic Children Update Tests', () => {
         test('removes item from beginning of list', async () => {
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-4', { hidden: true });
 
             const getOrder = async () => {
                 const items = await page.$$eval('#simple-list-container .item', els =>
@@ -101,6 +105,7 @@ describe('Dynamic Children Update Tests', () => {
         test('removes item from middle of list', async () => {
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-4', { hidden: true });
 
             const getOrder = async () => {
                 const items = await page.$$eval('#simple-list-container .item', els =>
@@ -112,10 +117,7 @@ describe('Dynamic Children Update Tests', () => {
             expect(await getOrder()).toEqual(['Item 1', 'Item 2', 'Item 3']);
 
             await page.click('#remove-simple-middle-btn');
-            await page.waitForFunction(() => {
-                const items = document.querySelectorAll('#simple-list-container .item');
-                return items.length === 2;
-            });
+            await page.waitForSelector('#simple-item-2', { hidden: true });
 
             expect(await getOrder()).toEqual(['Item 1', 'Item 3']);
         });
@@ -123,6 +125,7 @@ describe('Dynamic Children Update Tests', () => {
         test('removes item from end of list', async () => {
             await page.click('#reset-simple-btn');
             await page.waitForSelector('#simple-item-1');
+            await page.waitForSelector('#simple-item-2');
 
             const getOrder = async () => {
                 const items = await page.$$eval('#simple-list-container .item', els =>
@@ -134,10 +137,7 @@ describe('Dynamic Children Update Tests', () => {
             expect(await getOrder()).toEqual(['Item 1', 'Item 2', 'Item 3']);
 
             await page.click('#remove-simple-last-btn');
-            await page.waitForFunction(() => {
-                const items = document.querySelectorAll('#simple-list-container .item');
-                return items.length === 2;
-            });
+            await page.waitForSelector('#simple-item-3', { hidden: true });
 
             expect(await getOrder()).toEqual(['Item 1', 'Item 2']);
         });
@@ -153,8 +153,8 @@ describe('Dynamic Children Update Tests', () => {
                 return items;
             };
 
-            const initialItems = await getElementIds();
-            expect(initialItems.length).toBeGreaterThan(0);
+            const initialItems = await getElementIds()
+            expect(initialItems).toHaveLength(3);
 
             // Shuffle the list
             await page.click('#shuffle-object-btn');
@@ -166,7 +166,7 @@ describe('Dynamic Children Update Tests', () => {
             const shuffledItems = await getElementIds();
 
             // Items should still exist but potentially in different order
-            expect(shuffledItems.length).toBe(initialItems.length);
+            expect(shuffledItems).toHaveLength(initialItems.length);
 
             // Each original item should still exist (same ID and content)
             for (const initialItem of initialItems) {
@@ -187,7 +187,11 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#sort-object-name-btn');
             await page.waitForFunction(() => {
                 const container = document.querySelector('#object-list-container');
-                return container && container.children.length > 0;
+                const children = container?.children
+                return children
+                    && children[0].id === 'object-item-1'
+                    && children[1].id === 'object-item-2'
+                    && children[2].id === 'object-item-3'
             });
 
             const sortedNames = await getItemNames();
@@ -213,7 +217,11 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#sort-object-id-btn');
             await page.waitForFunction(() => {
                 const container = document.querySelector('#object-list-container');
-                return container && container.children.length > 0;
+                const children = container?.children
+                return children
+                    && children[0].id === 'object-item-1'
+                    && children[1].id === 'object-item-2'
+                    && children[2].id === 'object-item-3'
             });
 
             const sortedIds = await getItemIds();
@@ -233,10 +241,12 @@ describe('Dynamic Children Update Tests', () => {
             const initialOrder = await getOrder();
 
             await page.click('#reverse-object-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((initial) => {
                 const container = document.querySelector('#object-list-container');
-                return container && container.children.length > 0;
-            });
+                const children = container?.children
+                const first = children[0]?.textContent
+                return container && children && children.length === 3 && first === initial[initial.length - 1]
+            }, undefined, initialOrder);
 
             const reversedOrder = await getOrder();
             expect(reversedOrder).toEqual([...initialOrder].reverse());
@@ -294,15 +304,12 @@ describe('Dynamic Children Update Tests', () => {
             const initialType = await getFirstItemType();
 
             await page.click('#toggle-mixed-0-btn');
-            await page.waitForFunction((prevType) => {
-                const container = document.querySelector('#mixed-content-container');
-                if (!container || !container.firstChild) return false;
-                const currentType = container.firstChild.nodeType === Node.TEXT_NODE ? 'text' : 'element';
-                return currentType !== prevType;
-            }, {}, initialType);
+            await page.waitForSelector('div#mixed-element-0');
+            expect(await getFirstItemType()).not.toBe(initialType);
 
-            const newType = await getFirstItemType();
-            expect(newType).not.toBe(initialType);
+            await page.click('#toggle-mixed-0-btn');
+            await page.waitForSelector('div#mixed-element-0', { hidden: true });
+            expect(await getFirstItemType()).toBe(initialType);
         });
 
         test('adds mixed content item', async () => {
@@ -342,11 +349,11 @@ describe('Dynamic Children Update Tests', () => {
             const initialContent = await getMixedContent();
 
             await page.click('#shuffle-mixed-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((initial) => {
                 // Wait for DOM to update
                 const container = document.querySelector('#mixed-content-container');
-                return container && container.childNodes.length > 0;
-            });
+                return container && container.childNodes.length === initial
+            }, undefined, initialContent.length);
 
             const shuffledContent = await getMixedContent();
 
@@ -419,18 +426,16 @@ describe('Dynamic Children Update Tests', () => {
 
             const initialChildCount = await getFirstParentChildCount();
 
-            if (initialChildCount > 0) {
-                await page.click('#remove-nested-child-btn');
-                await page.waitForFunction((prevCount) => {
-                    const firstParent = document.querySelector('#nested-children-container .nested-container:first-child');
-                    if (!firstParent) return false;
-                    const children = firstParent.querySelectorAll('.nested-children .item');
-                    return children.length < prevCount;
-                }, {}, initialChildCount);
+            await page.click('#remove-nested-child-btn');
+            await page.waitForFunction((prevCount) => {
+                const firstParent = document.querySelector('#nested-children-container .nested-container:first-child');
+                if (!firstParent) return false;
+                const children = firstParent.querySelectorAll('.nested-children .item');
+                return children.length < prevCount;
+            }, {}, initialChildCount);
 
-                const newChildCount = await getFirstParentChildCount();
-                expect(newChildCount).toBe(initialChildCount - 1);
-            }
+            const newChildCount = await getFirstParentChildCount();
+            expect(newChildCount).toBe(initialChildCount - 1);
         });
 
         test('shuffles parent order', async () => {
@@ -444,10 +449,10 @@ describe('Dynamic Children Update Tests', () => {
             const initialOrder = await getParentOrder();
 
             await page.click('#shuffle-nested-parents-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((initial) => {
                 const container = document.querySelector('#nested-children-container');
-                return container && container.children.length > 0;
-            });
+                return container && container.children.length === initial
+            }, {}, initialOrder.length);
 
             const shuffledOrder = await getParentOrder();
 
@@ -457,30 +462,30 @@ describe('Dynamic Children Update Tests', () => {
         });
 
         test('shuffles children within parent', async () => {
+            // reload page here, or there is a race condition from other tests:
+            // it could happen that shuffle from previous test is scheduled to the same frame
+            // as shuffle from this tests. It creates a situation where result from 'getFirstParentChildOrder' is not longer valid
+            await page.reload()
+
             const getFirstParentChildOrder = async () => {
-                const firstParent = await page.$('#nested-children-container .nested-container:first-child');
-                if (!firstParent) return [];
-                const children = await firstParent.$$eval('.nested-children .item', els =>
+                return page.$$eval('#nested-children-container .nested-container:first-child .nested-children .item', els =>
                     els.map(el => el.textContent)
                 );
-                return children;
             };
 
             const initialChildOrder = await getFirstParentChildOrder();
 
-            if (initialChildOrder.length > 1) {
-                await page.click('#shuffle-nested-children-btn');
-                await page.waitForFunction(() => {
-                    const firstParent = document.querySelector('#nested-children-container .nested-container:first-child');
-                    return firstParent && firstParent.querySelectorAll('.nested-children .item').length > 0;
-                });
+            await page.click('#shuffle-nested-children-btn');
+            await page.waitForFunction((initial) => {
+                const children = document.querySelectorAll('#nested-children-container .nested-container:first-child .nested-children .item')
+                return children.length === initial
+            }, undefined, initialChildOrder.length);
 
-                const shuffledChildOrder = await getFirstParentChildOrder();
+            const shuffledChildOrder = await getFirstParentChildOrder();
 
-                // Should have same children but potentially different order
-                expect(shuffledChildOrder.length).toBe(initialChildOrder.length);
-                expect(shuffledChildOrder.sort()).toEqual(initialChildOrder.sort());
-            }
+            // Should have same children but potentially different order
+            expect(shuffledChildOrder).toHaveLength(initialChildOrder.length);
+            expect(shuffledChildOrder.sort()).toEqual(initialChildOrder.sort());
         });
     });
 
@@ -497,10 +502,12 @@ describe('Dynamic Children Update Tests', () => {
             const firstItem = initialItems[0];
 
             await page.click('#move-keyed-first-to-end-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length, first) => {
                 const container = document.querySelector('#keyed-items-container');
-                return container && container.children.length > 0;
-            });
+                return container
+                    && container.children.length === length
+                    && container.children[container.children.length - 1].id === first
+            }, undefined, initialItems.length, initialItems[0].id);
 
             const movedItems = await getKeyedItems();
 
@@ -522,10 +529,12 @@ describe('Dynamic Children Update Tests', () => {
             const lastItem = initialItems[initialItems.length - 1];
 
             await page.click('#move-keyed-last-to-start-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length, last) => {
                 const container = document.querySelector('#keyed-items-container');
-                return container && container.children.length > 0;
-            });
+                return container
+                    && container.children.length === length
+                    && container.children[0].id === last
+            }, undefined, initialItems.length, initialItems[initialItems.length - 1].id);
 
             const movedItems = await getKeyedItems();
 
@@ -582,10 +591,10 @@ describe('Dynamic Children Update Tests', () => {
             };
 
             await page.click('#sort-keyed-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length) => {
                 const container = document.querySelector('#keyed-items-container');
-                return container && container.children.length > 0;
-            });
+                return container && container.children.length === length
+            }, undefined, await getKeyedItemKeys().then(a => a.length));
 
             const sortedKeys = await getKeyedItemKeys();
             const expectedSorted = [...sortedKeys].sort();
@@ -603,10 +612,10 @@ describe('Dynamic Children Update Tests', () => {
             const initialItems = await getKeyedItems();
 
             await page.click('#shuffle-keyed-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length) => {
                 const container = document.querySelector('#keyed-items-container');
-                return container && container.children.length > 0;
-            });
+                return container && container.children.length === length
+            }, undefined, initialItems.length);
 
             const shuffledItems = await getKeyedItems();
 
@@ -632,10 +641,10 @@ describe('Dynamic Children Update Tests', () => {
             const initialCount = await getPerformanceItemCount();
 
             await page.click('#shuffle-performance-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length) => {
                 const container = document.querySelector('#performance-list-container');
-                return container && container.children.length > 0;
-            });
+                return container && container.children.length === length
+            }, undefined, initialCount);
 
             const shuffledCount = await getPerformanceItemCount();
             expect(shuffledCount).toBe(initialCount);
@@ -650,10 +659,13 @@ describe('Dynamic Children Update Tests', () => {
             };
 
             await page.click('#sort-performance-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((length) => {
                 const container = document.querySelector('#performance-list-container');
-                return container && container.children.length > 0;
-            });
+                return container
+                    && container.children.length === length
+                    && container.children[0].id === 'perf-item-0'
+                    && container.children[container.children.length - 1].id === 'perf-item-99'
+            }, undefined, await getPerformanceItemIds().then(a => a.length));
 
             const sortedIds = await getPerformanceItemIds();
             const expectedSorted = [...sortedIds].sort((a, b) => a - b);
@@ -671,25 +683,30 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#add-performance-items-btn');
             await page.waitForFunction((prevCount) => {
                 const items = document.querySelectorAll('#performance-list-container .item');
-                return items.length >= prevCount; // May not show all due to slicing
+                return items.length === prevCount + 10;
             }, {}, initialCount);
 
-            // Note: The component only shows first 20 items, so we can't directly test count increase
-            // But we can verify the operation completed without errors
             const newCount = await getPerformanceItemCount();
-            expect(newCount).toBeGreaterThanOrEqual(0);
+            expect(newCount).toBe(initialCount + 10);
         });
 
         test('removes multiple items from large dataset', async () => {
+            const getPerformanceItemCount = async () => {
+                const items = await page.$$('#performance-list-container .item');
+                return items.length;
+            };
+
+            const initialCount = await getPerformanceItemCount()
+
             await page.click('#remove-performance-items-btn');
-            await page.waitForFunction(() => {
+            await page.waitForFunction((initial) => {
                 const container = document.querySelector('#performance-list-container');
-                return container && container.children.length >= 0;
-            });
+                return container && container.children.length === initial - 10
+            }, undefined, initialCount);
 
             // Verify operation completed without errors
             const count = await page.$$('#performance-list-container .item');
-            expect(count.length).toBeGreaterThanOrEqual(0);
+            expect(count.length).toBe(Math.max(initialCount - 10, 0));
         });
     });
 
@@ -756,6 +773,9 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#toggle-conditional-a-btn');
             await page.click('#toggle-conditional-b-btn');
             await page.click('#toggle-conditional-c-btn');
+            await page.waitForSelector('#conditional-a');
+            await page.waitForSelector('#conditional-b');
+            await page.waitForSelector('#conditional-c');
 
             expect(await page.$('#conditional-static-start')).toBeTruthy();
             expect(await page.$('#conditional-static-end')).toBeTruthy();
@@ -979,8 +999,13 @@ describe('Dynamic Children Update Tests', () => {
                 await page.click('#add-simple-end-btn');
                 await page.click('#add-simple-beginning-btn');
                 await page.click('#remove-simple-last-btn');
-
             }
+
+            await page.waitForFunction(() => {
+                const items = document.querySelectorAll('#simple-list-container .item')
+                const texts = [...items].map(el => el.textContent).join(', ')
+                return texts === 'Item 13, Item 11, Item 9, Item 7, Item 5, Item 1, Item 2, Item 3'
+            })
 
             expect(await getItems()).toEqual([
                 'Item 13',
@@ -1041,6 +1066,9 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#reverse-object-btn');
             await page.click('#remove-object-btn');
 
+            // wait 2 frames to guarantee all updates has passed
+            await waitForUpdates()
+
             // Verify container still exists and is functional
             const container = await page.$('#object-list-container');
             expect(container).toBeTruthy();
@@ -1071,7 +1099,7 @@ describe('Dynamic Children Update Tests', () => {
             // Wait for DOM to stabilize
             await page.waitForFunction(() => {
                 const container = document.querySelector('#conditional-children-container');
-                return container && container.children.length >= 2; // At least start and end
+                return container && container.children.length === 4; // start + end + 2 conditionals
             });
 
             // Verify static elements are still present
@@ -1097,18 +1125,16 @@ describe('Dynamic Children Update Tests', () => {
 
             const initialFirstKeyed = await getElementReference('#keyed-items-container .item:first-child');
 
-            if (initialFirstKeyed) {
-                // Perform operations that should preserve element identity
-                await page.click('#shuffle-keyed-btn');
-                await page.click('#sort-keyed-btn');
+            // Perform operations that should preserve element identity
+            await page.click('#shuffle-keyed-btn');
+            await page.click('#sort-keyed-btn');
 
-                // Find the element with the same ID
-                const preservedElement = await getElementReference(`#${initialFirstKeyed.id}`);
-                expect(preservedElement).toBeTruthy();
-                expect(preservedElement.id).toBe(initialFirstKeyed.id);
-                expect(preservedElement.className).toBe(initialFirstKeyed.className);
-                expect(preservedElement.textContent).toBe(initialFirstKeyed.textContent);
-            }
+            // Find the element with the same ID
+            const preservedElement = await getElementReference(`#${initialFirstKeyed.id}`);
+            expect(preservedElement).toBeTruthy();
+            expect(preservedElement.id).toBe(initialFirstKeyed.id);
+            expect(preservedElement.className).toBe(initialFirstKeyed.className);
+            expect(preservedElement.textContent).toBe(initialFirstKeyed.textContent);
         });
 
         test('handles mixed content type changes gracefully', async () => {
@@ -1122,6 +1148,9 @@ describe('Dynamic Children Update Tests', () => {
 
             // Shuffle mixed content
             await page.click('#shuffle-mixed-btn');
+
+            // wait 2 frames to guarantee all updates has passed
+            await waitForUpdates()
 
             // Verify container is still functional
             const container = await page.$('#mixed-content-container');
@@ -1139,6 +1168,9 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#sort-performance-btn');
             await page.click('#reverse-performance-btn');
             await page.click('#add-performance-items-btn');
+
+            // wait 2 frames to guarantee all updates has passed
+            await waitForUpdates()
 
             const endTime = Date.now();
             const duration = endTime - startTime;
@@ -1159,6 +1191,9 @@ describe('Dynamic Children Update Tests', () => {
                 await page.click('#shuffle-nested-parents-btn');
                 await page.click('#shuffle-nested-children-btn');
             }
+
+            // wait 2 frames to guarantee all updates has passed
+            await waitForUpdates()
 
             // Verify structure is still intact
             const parents = await page.$$('#nested-children-container .nested-container');
@@ -1210,6 +1245,8 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#move-keyed-last-to-start-btn');
             await page.click('#sort-keyed-btn');
 
+            await waitForUpdates()
+
             const endTime = Date.now();
             const duration = endTime - startTime;
 
@@ -1237,6 +1274,8 @@ describe('Dynamic Children Update Tests', () => {
             await page.click('#shuffle-object-btn');
             await page.click('#shuffle-object-btn');
 
+            await waitForUpdates()
+
             const finalIds = await getItemIds();
 
             // Same elements should exist (efficient reconciliation)
@@ -1252,6 +1291,8 @@ describe('Dynamic Children Update Tests', () => {
                 await page.click('#toggle-conditional-b-btn');
             }
 
+            await waitForUpdates()
+
             const endTime = Date.now();
             const duration = endTime - startTime;
 
@@ -1264,3 +1305,13 @@ describe('Dynamic Children Update Tests', () => {
         });
     });
 });
+
+async function waitForUpdates() {
+    await page.evaluate(async () => {
+        return new Promise((resolve) => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(resolve)
+            })
+        })
+    })
+}

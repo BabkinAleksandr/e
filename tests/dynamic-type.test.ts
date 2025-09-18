@@ -131,7 +131,7 @@ describe('Dynamic Type Update Tests', () => {
         test('click handlers are preserved when element type changes', async () => {
             // Start with div that has click handler
             await page.click('#set-clickable-div-btn');
-            await page.waitForSelector('#clickable-element');
+            await page.waitForSelector('div#clickable-element');
 
             expect(await page.$eval('#clickable-element', el => el.tagName.toLowerCase())).toBe('div');
 
@@ -139,7 +139,10 @@ describe('Dynamic Type Update Tests', () => {
             await page.click('#clickable-element');
             await page.waitForSelector('#click-counter');
 
-            expect(await page.$eval('#click-counter', el => el.textContent)).toBe('Clicks: 1');
+            await page.waitForFunction(() => {
+                const counter = document.querySelector('#click-counter')
+                return counter && counter.textContent === 'Clicks: 1'
+            })
 
             // Change to button
             await page.click('#set-clickable-button-btn');
@@ -160,14 +163,17 @@ describe('Dynamic Type Update Tests', () => {
         test('input handlers are preserved when changing input types', async () => {
             // Start with text input
             await page.click('#set-text-input-btn');
-            await page.waitForSelector('#input-element');
+            await page.waitForSelector('input#input-element');
 
             expect(await page.$eval('input#input-element', el => el.type)).toBe('text');
 
             const text = 'test'
             // Type in the input
-            await page.type('#input-element', text);
-            await page.waitForSelector('#input-value');
+            await page.type('#input-element', 'test');
+            await page.waitForFunction(() => {
+                const input = document.querySelector('#input-value')
+                return input.textContent === 'Value: test'
+            })
 
             expect(await page.$eval('#input-value', el => el.textContent)).toBe('Value: test');
 
@@ -368,12 +374,13 @@ describe('Dynamic Type Update Tests', () => {
         test('changing to invalid element type rendering invalid element', async () => {
             // Start with valid element
             await page.click('#set-valid-element-btn');
-            await page.waitForSelector('#edge-case-element');
+            await page.waitForSelector('div#edge-case-element');
 
             expect(await page.$eval('#edge-case-element', el => el.tagName.toLowerCase())).toBe('div');
 
             // Attempt to change to invalid type (should fallback or handle gracefully)
             await page.click('#set-invalid-element-btn');
+            await page.waitForSelector('invalid#edge-case-element')
 
             // Element should still exist and be functional
             expect(await page.$eval('#edge-case-element', el => el.tagName.toLowerCase())).toBe('invalid');

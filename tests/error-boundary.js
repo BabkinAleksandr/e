@@ -599,16 +599,12 @@ document.addEventListener('e:init', () => {
                     e('button', {
                         id: 'resolve-nested-errors-btn',
                         onclick: () => {
-                            // TODO: order should not matter,
-                            // but it is now: if nested child error resolved before it's parent
-                            // it's never got updated, because... don't know why
-                            // should be fixed with scheduling introduction
-                            state.nestedNestedChild1Error = false;
-                            state.nestedNestedChild2Error = false;
-                            state.nestedChild1Error = false;
                             state.nestedChild2Error = false;
-                            state.nestedChild3Error = false;
+                            state.nestedNestedChild1Error = false;
                             state.nestedParentError = false;
+                            state.nestedNestedChild2Error = false;
+                            state.nestedChild3Error = false;
+                            state.nestedChild1Error = false;
 
                         }
                     }, 'Resolve All Nested Errors')
@@ -699,11 +695,6 @@ document.addEventListener('e:init', () => {
                 e('button', {
                     id: 'trigger-deep-error-level-3-btn',
                     onclick: () => {
-                        // TODO: order should not matter,
-                        // but it is now: if set boolean value first,
-                        // error's got triggered with 'deepLevel = 1',
-                        // which trigges error above the error boundary
-                        //
                         state.deepLevel = 3;
                         state.deepError = true;
                     }
